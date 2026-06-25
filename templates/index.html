@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="landing-page">
+    <nav class="landing-nav">
+        <div class="brand">Monarch<span>Wealth</span></div>
+        <div class="nav-links">
+            <a href="#how">How It Works</a>
+            <a href="#features">Features</a>
+        </div>
+        <div>
+            <a href="{{ url_for('login') }}" class="btn-outline">Log In</a>
+            <a href="{{ url_for('register') }}" class="btn-primary">Get Started</a>
+        </div>
+    </nav>
+
+    <section class="hero">
+        <span class="badge">⭐ Invitation-Only</span>
+        <h1>You're invited to join <em>14,000+</em> professionals building real wealth.</h1>
+        <p class="sub">Monarch Wealth Group helps ambitious individuals grow their savings through curated investments.
+            No experience needed. Start with as little as $50.</p>
+        <div class="cta-group">
+            <a href="{{ url_for('register') }}" class="btn-primary">Start Building Today →</a>
+            <a href="#how" class="btn-secondary">See How It Works</a>
+        </div>
+    </section>
+
+    <div class="proof-bar">
+        <div class="item"><span class="num">14,247</span><span class="lbl">Members</span></div>
+        <div class="item"><span class="num">18.4%</span><span class="lbl">Avg. Growth 2025</span></div>
+        <div class="item"><span class="num">47</span><span class="lbl">Countries</span></div>
+    </div>
+
+    <section class="how-section" id="how">
+        <div class="section-head">
+            <p class="eyebrow">Simple Steps</p>
+            <h2>How It Works</h2>
+        </div>
+        <div class="how-grid">
+            <div class="how-step">
+                <div class="icon">📝</div>
+                <h3>Create Your Account</h3>
+                <p>3-minute setup. No complicated forms.</p>
+            </div>
+            <div class="how-step">
+                <div class="icon">💰</div>
+                <h3>Fund Your Portfolio</h3>
+                <p>Start with as little as $50.</p>
+            </div>
+            <div class="how-step">
+                <div class="icon">📈</div>
+                <h3>Watch It Grow</h3>
+                <p>Real-time updates. See your money work for you.</p>
+            </div>
+        </div>
+    </section>
+
+    <footer class="landing-footer">
+        <p>Monarch Wealth Group is a private wealth platform. All investments carry risk. Past performance does not
+            guarantee future results.</p>
+        <div class="links">
+            <a href="#">Terms</a>
+            <a href="#">Privacy</a>
+            <a href="#">Contact</a>
+        </div>
+    </footer>
+</div>
+{% endblock %}
