@@ -432,7 +432,7 @@ def deposit_card():
     payload = {
         'email': current_user.email,
         'amount': int(amount * 100),  # Paystack uses kobo/cents
-        'currency': 'USD',
+        'currency': 'NGN',
         'callback_url': url_for('paystack_deposit_callback', _external=True),
         'metadata': {
             'user_id': current_user.id,
