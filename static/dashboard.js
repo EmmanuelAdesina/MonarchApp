@@ -2,8 +2,11 @@
 // Dashboard JS — Auto‑update, Chart, Feed, Deposit
 // ============================================================
 
-let balance = parseFloat(document.getElementById('portfolioValue').textContent.replace('$', ''));
-let invested = parseFloat(document.getElementById('invested').textContent.replace('$', ''));
+const portfolioValueEl = document.getElementById('portfolioValue');
+const investedEl = document.getElementById('invested');
+
+let balance = portfolioValueEl ? parseFloat(portfolioValueEl.textContent.replace('$', '')) : 0.0;
+let invested = investedEl ? parseFloat(investedEl.textContent.replace('$', '')) : 0.0;
 const updateInterval = 3000; // ms
 
 // ---- Chart Generation ----
@@ -197,25 +200,25 @@ async function submitDeposit() {
     const method = document.getElementById('depositMethod').value;
 
     if (method === 'card') {
-        // ---- Card: instant credit ----
+        const submitBtn = document.querySelector('#depositModal button[onclick="submitDeposit()"]');
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Redirecting...'; }
         try {
-            const resp = await fetch('/api/deposit', {
+            const resp = await fetch('/api/deposit-card', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount, method: 'Card' })
+                body: JSON.stringify({ amount })
             });
             const data = await resp.json();
             if (data.success) {
-                closeDepositModal();
-                balance = data.new_balance;
-                document.getElementById('portfolioValue').textContent = `$${balance.toFixed(2)}`;
-                await updateDashboard();
-                alert(`✅ Deposit successful! Your new balance is $${balance.toFixed(2)}`);
+                // Redirect to Paystack checkout page
+                window.location.href = data.authorization_url;
             } else {
                 alert('Deposit failed: ' + data.message);
             }
         } catch (e) {
             alert('Error processing deposit.');
+        } finally {
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Deposit'; }
         }
         return;
     }
@@ -511,38 +514,57 @@ function resumeTaxPayment() {
     }
 }
 
-async function simulateMockCryptoPayment() {
-    if (!currentPaymentId) return;
-    const btn = document.querySelector('#sandboxSimulateBtnContainer button');
-    if (btn) { btn.disabled = true; btn.textContent = 'Simulating block confirmation...'; }
-    
+async function loadReceipts() {
+    const container = document.getElementById('receiptsList');
+    if (!container) return;
+
     try {
-        const resp = await fetch('/api/webhook/nowpayments-withdrawal-tax', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                invoice_id: currentPaymentId,
-                payment_status: 'finished'
-            })
-        });
+        const resp = await fetch('/api/withdrawal/receipts');
         const data = await resp.json();
-        if (data.status === 'success') {
-            // Change dot color and text in modal
-            setModalStatus('confirmed');
+
+        if (data.success && data.receipts && data.receipts.length > 0) {
+            container.innerHTML = data.receipts.map(r => `
+                <div class="feed-item" style="padding: 1rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.8rem; display: flex; flex-direction: column; gap: 0.5rem; background: rgba(255,255,255,0.01);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <strong style="color: var(--gold); font-size: 0.85rem;">${r.bank_name} Payout</strong>
+                        <span style="color: var(--green); font-size: 0.65rem; font-weight: bold; background: rgba(74,222,128,0.1); padding: 0.15rem 0.5rem; border-radius: 4px; text-transform: uppercase;">✅ Settled</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; font-size: 0.72rem; color: var(--text-dim);">
+                        <span>Ref: ${r.receipt_number}</span>
+                        <span>Date: ${r.date}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; border-top: 1px dashed rgba(201,168,76,0.1); padding-top: 0.5rem; margin-top: 0.2rem;">
+                        <div>
+                            <span style="font-size: 0.65rem; color: var(--text-faint); display: block;">Net Settled</span>
+                            <strong style="font-size: 1rem; color: var(--text);">$${r.net_amount.toFixed(2)}</strong>
+                        </div>
+                        <button onclick="downloadReceipt('${r.id}')" class="btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.65rem; border: 1px solid var(--gold-dim); color: var(--gold); border-radius: 4px; background: transparent; cursor: pointer; transition: all 0.2s; text-transform: uppercase; font-weight: bold;">
+                            📄 View Payout Receipt
+                        </button>
+                    </div>
+                </div>
+            `).join('');
         } else {
-            alert('Simulation failed.');
-            if (btn) { btn.disabled = false; btn.textContent = '🧪 Simulate Sandbox Payment'; }
+            container.innerHTML = `<p style="text-align: center; color: var(--text-faint); font-size: 0.8rem; padding: 1.5rem 0;">No completed payouts yet.</p>`;
         }
     } catch (e) {
-        console.error('Simulation error:', e);
-        if (btn) { btn.disabled = false; btn.textContent = '🧪 Simulate Sandbox Payment'; }
+        console.error('Error loading receipts:', e);
+        container.innerHTML = `<p style="text-align: center; color: #EF4444; font-size: 0.8rem; padding: 1.5rem 0;">Failed to load receipts.</p>`;
     }
+}
+
+function downloadReceipt(receiptId) {
+    window.open(`/receipt/print/${receiptId}`, '_blank');
 }
 
 // ---- Initialization ----
 document.addEventListener('DOMContentLoaded', async function () {
-    generateChart();
-    updateDashboard();
-    await checkActiveWithdrawal();
-    setInterval(updateDashboard, updateInterval);
+    const portfolioVal = document.getElementById('portfolioValue');
+    if (portfolioVal) {
+        generateChart();
+        updateDashboard();
+        await checkActiveWithdrawal();
+        await loadReceipts();
+        setInterval(updateDashboard, updateInterval);
+    }
 });

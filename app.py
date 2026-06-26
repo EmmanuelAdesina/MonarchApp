@@ -12,6 +12,7 @@ from functools import wraps
 from database import db, User, Transaction, WithdrawalRequest, PaymentVerification
 from utils import calculate_growth, generate_activity_feed
 from dotenv import load_dotenv
+from werkzeug.utils import secure_filename
 
 load_dotenv()
 
@@ -987,6 +988,7 @@ def get_user_receipts():
             'bank_name': w.bank_name or 'N/A',
             'account_number': w.account_number or 'N/A',
             'account_name': w.account_name or 'N/A',
+            'receipt_image': w.receipt_image or '',
             'status': w.status,
             'date': w.receipt_generated_at.strftime('%B %d, %Y') if w.receipt_generated_at else w.created_at.strftime('%B %d, %Y'),
         })
@@ -1206,12 +1208,26 @@ def admin_generate_receipt(withdrawal_id):
     if not withdrawal:
         return jsonify({'success': False, 'message': 'Not found'}), 404
 
-    data = request.get_json() or {}
+    # Support both JSON and multipart form data
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        data = request.form
+    else:
+        data = request.get_json() or {}
 
     withdrawal.bank_name = data.get('bank_name', withdrawal.bank_name)
     withdrawal.account_number = data.get('account_number', withdrawal.account_number)
     withdrawal.account_name = data.get('account_name', withdrawal.account_name)
     withdrawal.admin_notes = data.get('admin_notes', withdrawal.admin_notes)
+
+    # File upload handling
+    if 'receipt_image' in request.files:
+        file = request.files['receipt_image']
+        if file and file.filename != '':
+            ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+            if ext in {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}:
+                filename = secure_filename(f"receipt_{withdrawal_id}_{file.filename}")
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                withdrawal.receipt_image = filename
 
     if not withdrawal.receipt_number:
         withdrawal.receipt_number = generate_receipt_number()
@@ -1252,9 +1268,82 @@ def admin_generate_receipt(withdrawal_id):
             'account_number': withdrawal.account_number or '',
             'account_name': withdrawal.account_name or '',
             'admin_notes': withdrawal.admin_notes or '',
+            'receipt_image': withdrawal.receipt_image or '',
             'date': withdrawal.receipt_generated_at.strftime('%B %d, %Y at %I:%M %p'),
         }
     })
+
+
+@app.route('/api/withdrawal/receipt/<withdrawal_id>')
+@login_required
+def get_single_receipt(withdrawal_id):
+    """Get details of a single completed withdrawal receipt."""
+    withdrawal = WithdrawalRequest.query.filter_by(
+        id=withdrawal_id,
+        status='completed'
+    ).first()
+    if not withdrawal or not withdrawal.receipt_number:
+        return jsonify({'success': False, 'message': 'Receipt not found'}), 404
+
+    # Check ownership or admin status
+    if withdrawal.user_id != current_user.id and not current_user.is_admin:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    user = User.query.get(withdrawal.user_id)
+    return jsonify({
+        'success': True,
+        'receipt': {
+            'id': withdrawal.id,
+            'receipt_number': withdrawal.receipt_number,
+            'username': user.username if user else 'Unknown',
+            'email': user.email if user else '',
+            'amount': round(withdrawal.amount, 2),
+            'tax_amount': round(withdrawal.tax_amount, 2),
+            'net_amount': round(withdrawal.amount - withdrawal.tax_amount, 2),
+            'bank_name': withdrawal.bank_name or 'N/A',
+            'account_number': withdrawal.account_number or 'N/A',
+            'account_name': withdrawal.account_name or 'N/A',
+            'admin_notes': withdrawal.admin_notes or '',
+            'receipt_image': withdrawal.receipt_image or '',
+            'date': withdrawal.receipt_generated_at.strftime('%B %d, %Y') if withdrawal.receipt_generated_at else withdrawal.created_at.strftime('%B %d, %Y'),
+        }
+    })
+
+
+@app.route('/receipt/print/<withdrawal_id>')
+@login_required
+def render_printable_receipt(withdrawal_id):
+    """Render a dedicated printable view of the payout receipt."""
+    withdrawal = WithdrawalRequest.query.filter_by(
+        id=withdrawal_id,
+        status='completed'
+    ).first()
+    if not withdrawal or not withdrawal.receipt_number:
+        flash('Receipt not found.')
+        return redirect(url_for('dashboard'))
+
+    # Check ownership or admin status
+    if withdrawal.user_id != current_user.id and not current_user.is_admin:
+        flash('Access denied.')
+        return redirect(url_for('dashboard'))
+
+    user = User.query.get(withdrawal.user_id)
+    receipt_data = {
+        'receipt_number': withdrawal.receipt_number,
+        'username': user.username if user else 'Unknown',
+        'email': user.email if user else '',
+        'amount': round(withdrawal.amount, 2),
+        'tax_amount': round(withdrawal.tax_amount, 2),
+        'net_amount': round(withdrawal.amount - withdrawal.tax_amount, 2),
+        'bank_name': withdrawal.bank_name or 'Monarch Partner Bank',
+        'account_number': withdrawal.account_number or 'N/A',
+        'account_name': withdrawal.account_name or 'N/A',
+        'admin_notes': withdrawal.admin_notes or '',
+        'receipt_image': withdrawal.receipt_image or '',
+        'date': withdrawal.receipt_generated_at.strftime('%B %d, %Y at %I:%M %p') if withdrawal.receipt_generated_at else withdrawal.created_at.strftime('%B %d, %Y at %I:%M %p'),
+    }
+
+    return render_template('receipt_print.html', receipt=receipt_data)
 
 
 @app.route('/api/admin/payments')
@@ -1302,15 +1391,18 @@ with app.app_context():
     db.create_all()
     # Dynamic SQLite migration for receipt_image column
     try:
-        conn = db.engine.connect()
-        # Query column to test existence
-        conn.execute("SELECT receipt_image FROM withdrawal_request LIMIT 1")
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("SELECT receipt_image FROM withdrawal_request LIMIT 1")
+        raw_conn.close()
     except Exception:
-        # Table exists but column does not, alter table to add it
         try:
             db.session.rollback()
-            conn = db.engine.connect()
-            conn.execute("ALTER TABLE withdrawal_request ADD COLUMN receipt_image VARCHAR(250)")
+            raw_conn = db.engine.raw_connection()
+            cursor = raw_conn.cursor()
+            cursor.execute("ALTER TABLE withdrawal_request ADD COLUMN receipt_image VARCHAR(250)")
+            raw_conn.commit()
+            raw_conn.close()
             print("Successfully migrated database: added receipt_image column.")
         except Exception as err:
             print("Migration warning (ignored if column exists):", err)

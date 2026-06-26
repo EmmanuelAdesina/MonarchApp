@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard – Monarch Wealth Group{% endblock %}
+
+{% block content %}
+<div class="admin-page">
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+
+    <!-- Header -->
+    <div class="admin-header">
+        <div class="brand">Monarch<span>Admin</span></div>
+        <div class="user">
+            <span class="greeting">System Administrator</span>
+            <a href="{{ url_for('dashboard') }}" class="btn-outline">User Dashboard</a>
+            <a href="{{ url_for('logout') }}" class="btn-logout">Logout</a>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="admin-container">
+        
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="lbl">Total Deposits (Month)</div>
+                <div class="num" id="statDeposits">$0.00</div>
+                <div class="sub" id="statVerifiedCount">0 verified transactions</div>
+            </div>
+            <div class="stat-card">
+                <div class="lbl">Total Tax Collected (Month)</div>
+                <div class="num" id="statTax">$0.00</div>
+                <div class="sub">Compliance reserves</div>
+            </div>
+            <div class="stat-card">
+                <div class="lbl">Pending Withdrawals</div>
+                <div class="num" id="statPending">0</div>
+                <div class="sub">Awaiting admin review</div>
+            </div>
+            <div class="stat-card">
+                <div class="lbl">Total Registered Users</div>
+                <div class="num" id="statUsers">0</div>
+                <div class="sub">Active members</div>
+            </div>
+        </div>
+
+        <!-- Section Grid -->
+        <div class="admin-sections">
+            
+            <!-- Left Panel: Withdrawals Manager -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>💸 Withdrawal Requests</h3>
+                    <div class="tabs" id="withdrawalTabs">
+                        <button class="tab active" onclick="filterWithdrawals('')">All</button>
+                        <button class="tab" onclick="filterWithdrawals('pending')">Pending</button>
+                        <button class="tab" onclick="filterWithdrawals('tax_required')">Tax Required</button>
+                        <button class="tab" onclick="filterWithdrawals('completed')">Completed</button>
+                        <button class="tab" onclick="filterWithdrawals('rejected')">Rejected</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Amount</th>
+                                <th>Tax</th>
+                                <th>Net Amount</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="withdrawalsTableBody">
+                            <tr>
+                                <td colspan="7" class="loading">Loading withdrawal records...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right Panel: Verified Payments Ledger -->
+            <div class="panel" style="margin-top: 2rem;">
+                <div class="panel-header">
+                    <h3>📊 Verified Payments Ledger</h3>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="month" id="paymentsMonthFilter" class="admin-input" style="padding: 0.35rem 0.5rem; font-size: 0.75rem; width: auto; margin: 0;" onchange="loadPayments()">
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Gateway</th>
+                                <th>Reference</th>
+                                <th>Amount</th>
+                                <th>Type</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody id="paymentsTableBody">
+                            <tr>
+                                <td colspan="6" class="loading">Loading payments ledger...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- Receipt Generator Modal -->
+    <div id="receiptModal" class="admin-modal" style="display:none;">
+        <div class="modal-content">
+            <h3 style="color: var(--gold); border-bottom: 1px solid var(--border); padding-bottom: 0.8rem; margin-bottom: 1.2rem;">⚖️ Generate Payout Receipt & Approve</h3>
+            <form id="receiptForm" onsubmit="submitReceiptForm(event)">
+                <input type="hidden" id="modalWithdrawalId">
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="recAmount">Requested Amount</label>
+                        <input type="text" id="recAmount" readonly class="admin-input readonly">
+                    </div>
+                    <div class="form-group">
+                        <label for="recNet">Net Settlement Payout</label>
+                        <input type="text" id="recNet" readonly class="admin-input readonly" style="color: var(--green); font-weight: bold;">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="recBankName">Destination Bank Name *</label>
+                    <input type="text" id="recBankName" placeholder="e.g. JPMorgan Chase, Standard Chartered" required class="admin-input">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="recAccNum">Account Number *</label>
+                        <input type="text" id="recAccNum" placeholder="e.g. 1048291039" required class="admin-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="recAccName">Account Holder Name *</label>
+                        <input type="text" id="recAccName" placeholder="e.g. Sarah Jenkins" required class="admin-input">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="recImage">Upload Bank Transfer Slip / Proof Image (Optional)</label>
+                    <p style="font-size: 0.65rem; color: var(--text-dim); margin-top: -0.2rem; margin-bottom: 0.4rem;">
+                        Add a stamp, signature, or payment reference screenshot to embed in the downloadable receipt.
+                    </p>
+                    <input type="file" id="recImage" accept="image/*" class="admin-input" style="padding: 0.4rem 0.6rem;">
+                </div>
+
+                <div class="form-group">
+                    <label for="recNotes">Administrative Notes / Remarks (Optional)</label>
+                    <textarea id="recNotes" placeholder="e.g. Federal compliance check completed. Settlement cleared." rows="3" class="admin-input"></textarea>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" onclick="closeReceiptModal()" class="btn-ghost">Cancel</button>
+                    <button type="submit" class="btn-gold" id="btnSubmitReceipt">Approve & Generate Receipt</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+</div>
+
+<!-- Admin JS logic -->
+<script src="{{ url_for('static', filename='admin.js') }}"></script>
+{% endblock %}

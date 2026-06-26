@@ -6,7 +6,10 @@
 <div class="dashboard-page">
     <div class="dash-header">
         <div class="logo">Monarch<span>Wealth</span></div>
-        <div class="user">
+        <div class="user" style="display: flex; align-items: center; gap: 0.8rem;">
+            {% if user.is_admin %}
+            <a href="{{ url_for('admin_dashboard') }}" style="text-decoration: none; padding: 0.35rem 0.8rem; font-size: 0.65rem; border: 1px solid var(--gold); border-radius: 4px; color: var(--gold); text-transform: uppercase; font-weight: bold; background: rgba(201,168,76,0.05); margin-right: 0.5rem;">Admin Panel</a>
+            {% endif %}
             <span class="greeting">Welcome back, {{ user.username }}</span>
             <div class="avatar">{{ user.username[0]|upper }}</div>
         </div>
@@ -89,8 +92,16 @@
             </div>
         </div>
 
+        <!-- Payout Receipts Section -->
+        <div class="dash-activity" id="receiptsSection" style="margin-top: 1.5rem;">
+            <div class="feed-head">📄 Verified Payout Receipts</div>
+            <div id="receiptsList" style="padding: 0.5rem 0;">
+                <p style="text-align: center; color: var(--text-faint); font-size: 0.8rem; padding: 1.5rem 0;">No completed payouts yet.</p>
+            </div>
+        </div>
+
         <!-- Deposit Button -->
-        <button class="deposit-btn" onclick="openDepositModal()">
+        <button class="deposit-btn" onclick="openDepositModal()" style="margin-top: 1.5rem;">
             💰 Deposit & Grow Your Wealth
             <span class="sub">Minimum deposit: $50 — 100% secure</span>
         </button>
@@ -148,8 +159,8 @@
             
             <p style="color:var(--text-dim); font-size:0.9rem; margin:0 0 0.5rem 0;">Select Payment Method</p>
             <select id="depositMethod"
-                style="width:100%; padding:0.8rem; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:1rem; text-align:center; margin-bottom:1rem; outline:none; cursor:pointer;">
-                <option value="card" style="background:#111827;">💳 Credit/Debit Card (Instant)</option>
+                 style="width:100%; padding:0.8rem; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:1rem; text-align:center; margin-bottom:1rem; outline:none; cursor:pointer;">
+                <option value="card" style="background:#111827;">💳 Credit/Debit Card (Paystack Redirect)</option>
                 <option value="crypto-usdt" style="background:#111827;">🪙 Tether (USDT - TRC20)</option>
                 <option value="crypto-btc" style="background:#111827;">₿ Bitcoin (BTC)</option>
                 <option value="crypto-eth" style="background:#111827;">Ξ Ethereum (ETH)</option>
@@ -245,13 +256,6 @@
                 <p style="font-size:0.68rem; color:var(--text-faint); margin:0; line-height:1.5;">
                     Do <strong style="color:var(--text-dim);">not</strong> close this window while your payment is processing. This page auto-updates when your payment is detected on the blockchain.
                 </p>
-            </div>
-
-            <!-- Sandbox Simulation Button -->
-            <div id="sandboxSimulateBtnContainer" style="margin: 0.5rem 1.5rem; display: none;">
-                <button onclick="simulateMockCryptoPayment()" style="width: 100%; padding: 0.75rem; background: var(--green); color: var(--bg); border: none; border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: 700; transition: background 0.2s;">
-                    🧪 Simulate Sandbox Payment
-                </button>
             </div>
 
             <!-- Actions -->

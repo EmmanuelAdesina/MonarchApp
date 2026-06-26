@@ -6,7 +6,7 @@
         <div class="brand">Monarch<span>Wealth</span></div>
         <div class="nav-links">
             <a href="#how">How It Works</a>
-            <a href="#features">Features</a>
+            <a href="#proof">Verified Payouts</a>
         </div>
         <div>
             <a href="{{ url_for('login') }}" class="btn-outline">Log In</a>
@@ -52,6 +52,130 @@
                 <h3>Watch It Grow</h3>
                 <p>Real-time updates. See your money work for you.</p>
             </div>
+        </div>
+    </section>
+
+    <section class="proof-section" id="proof">
+        <div class="section-head">
+            <p class="eyebrow">Public Ledger</p>
+            <h2>Verified Payout Proof</h2>
+            <p class="sub" style="max-width: 500px; margin: 0.5rem auto 2rem; font-size: 0.9rem;">
+                All withdrawals are verified and processed securely through our clearing bank partners. Click any receipt to view details.
+            </p>
+        </div>
+        <div class="proof-grid">
+            {% for w in completed_withdrawals %}
+            <div class="receipt-card" onclick="window.open('/receipt/print/{{ w.id }}', '_blank')">
+                <div class="receipt-header">
+                    <span class="bank-tag">{{ w.bank_name or 'Securities Settlement' }}</span>
+                    <span class="status-badge">✅ Settled</span>
+                </div>
+                <div class="receipt-body">
+                    <div class="receipt-amount">${{ "%.2f"|format(w.amount - w.tax_amount) }}</div>
+                    <div class="receipt-label">Payout Net Amount</div>
+                    <div class="receipt-details">
+                        <div class="receipt-row">
+                            <span>Receipt ID</span>
+                            <span class="val">{{ w.receipt_number[:13] }}...</span>
+                        </div>
+                        <div class="receipt-row">
+                            <span>Beneficiary</span>
+                            <span class="val">{{ w.account_name[:3]|upper }}*** ({{ w.account_number[:4] }}***)</span>
+                        </div>
+                        <div class="receipt-row">
+                            <span>Date</span>
+                            <span class="val">{{ w.receipt_generated_at.strftime('%b %d, %Y') if w.receipt_generated_at else w.created_at.strftime('%b %d, %Y') }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="receipt-footer">
+                    <span>📄 Click to view settlement proof</span>
+                </div>
+            </div>
+            {% else %}
+            <!-- Fallback Mock Cards for visual display -->
+            <div class="receipt-card placeholder-card">
+                <div class="receipt-header">
+                    <span class="bank-tag">Chase Settlement</span>
+                    <span class="status-badge">✅ Settled</span>
+                </div>
+                <div class="receipt-body">
+                    <div class="receipt-amount">$14,850.00</div>
+                    <div class="receipt-label">Payout Net Amount</div>
+                    <div class="receipt-details">
+                        <div class="receipt-row">
+                            <span>Receipt ID</span>
+                            <span class="val">MWG-WD-20260624-E30D</span>
+                        </div>
+                        <div class="receipt-row">
+                            <span>Beneficiary</span>
+                            <span class="val">MAR*** (****9104)</span>
+                        </div>
+                        <div class="receipt-row">
+                            <span>Date</span>
+                            <span class="val">Jun 24, 2026</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="receipt-footer">
+                    <span>📄 Click to view settlement proof</span>
+                </div>
+            </div>
+            <div class="receipt-card placeholder-card">
+                <div class="receipt-header">
+                    <span class="bank-tag">Standard Chartered</span>
+                    <span class="status-badge">✅ Settled</span>
+                </div>
+                <div class="receipt-body">
+                    <div class="receipt-amount">$6,410.00</div>
+                    <div class="receipt-label">Payout Net Amount</div>
+                    <div class="receipt-details">
+                        <div class="receipt-row">
+                            <span>Receipt ID</span>
+                            <span class="val">MWG-WD-20260623-B84A</span>
+                        </div>
+                        <div class="receipt-row">
+                            <span>Beneficiary</span>
+                            <span class="val">DAV*** (****3302)</span>
+                        </div>
+                        <div class="receipt-row">
+                            <span>Date</span>
+                            <span class="val">Jun 23, 2026</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="receipt-footer">
+                    <span>📄 Click to view settlement proof</span>
+                </div>
+            </div>
+            <div class="receipt-card placeholder-card">
+                <div class="receipt-header">
+                    <span class="bank-tag">Zenith Bank Plc</span>
+                    <span class="status-badge">✅ Settled</span>
+                </div>
+                <div class="receipt-body">
+                    <div class="receipt-amount">$2,940.00</div>
+                    <div class="receipt-label">Payout Net Amount</div>
+                    <div class="receipt-details">
+                        <div class="receipt-row">
+                            <span>Receipt ID</span>
+                            <span class="val">MWG-WD-20260622-A91C</span>
+                        </div>
+                        <div class="receipt-row">
+                            <span>Beneficiary</span>
+                            <span class="val">EME*** (****4190)</span>
+                        </div>
+                        <div class="receipt-row">
+                            <span>Date</span>
+                            <span class="val">Jun 22, 2026</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="receipt-footer">
+                    <span>📄 Click to view settlement proof</span>
+                </div>
+            </div>
+            {% endfor %}
         </div>
     </section>
 
