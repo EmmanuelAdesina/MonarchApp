@@ -457,7 +457,7 @@ def deposit_card():
                 gateway='paystack',
                 gateway_reference=reference,
                 amount=amount,
-                currency='USD',
+                currency='NGN',
                 payment_type='deposit',
                 status='pending',
             )
