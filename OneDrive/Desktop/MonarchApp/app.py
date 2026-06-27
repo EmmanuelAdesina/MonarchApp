@@ -1,0 +1,2095 @@
+import os
+import bcrypt
+import random
+import hashlib
+import hmac
+import json
+import requests as http_requests
+from flask import Flask, render_template, render_template_string, request, redirect, url_for, flash, jsonify, session
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from datetime import datetime, timedelta, timezone
+import warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+# Helper to avoid warnings while keeping naive UTC for DB compat
+def _now():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+from functools import wraps
+from database import db, User, Transaction, WithdrawalRequest, PaymentVerification, ReferralBonus, generate_referral_code
+from utils import calculate_growth, generate_activity_feed
+from dotenv import load_dotenv
+from werkzeug.utils import secure_filename
+
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path, override=True)
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
+
+
+def refresh_payment_settings():
+    if os.path.exists(dotenv_path):
+        load_dotenv(dotenv_path, override=True)
+    global NOWPAYMENTS_API_KEY, PAYSTACK_SECRET_KEY, PAYSTACK_PUBLIC_KEY, ADMIN_SETUP_KEY
+    NOWPAYMENTS_API_KEY = os.getenv('NOWPAYMENTS_API_KEY', '')
+    PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', '')
+    PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY', '')
+    ADMIN_SETUP_KEY = os.getenv('ADMIN_SETUP_KEY', '')
+
+
+refresh_payment_settings()
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///monarch.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+UPLOAD_FOLDER = os.path.join(app.root_path, 'static', 'uploads')
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Payment gateway config — these are managed by refresh_payment_settings() at runtime.
+# Do NOT set them at module level; refresh_payment_settings() is the single source of truth.
+NOWPAYMENTS_BASE = 'https://api.nowpayments.io/v1'
+EXCHANGE_RATE_CACHE_DURATION_MINUTES = 60
+PAYSTACK_FALLBACK_RATE = float(os.getenv('PAYSTACK_FALLBACK_RATE', '1554.20'))
+EXCHANGE_RATE_CACHE_FILE = os.path.join(app.root_path, 'instance', 'paystack_exchange_rate.json')
+os.makedirs(os.path.dirname(EXCHANGE_RATE_CACHE_FILE), exist_ok=True)
+
+
+def _read_exchange_rate_cache():
+    try:
+        if not os.path.exists(EXCHANGE_RATE_CACHE_FILE):
+            return None
+        with open(EXCHANGE_RATE_CACHE_FILE, 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+        rate = data.get('rate')
+        timestamp = data.get('timestamp')
+        if rate and timestamp:
+            return float(rate), float(timestamp)
+    except Exception:
+        return None
+    return None
+
+
+def _write_exchange_rate_cache(rate):
+    try:
+        with open(EXCHANGE_RATE_CACHE_FILE, 'w', encoding='utf-8') as handle:
+            json.dump({'rate': rate, 'timestamp': datetime.utcnow().timestamp()}, handle)
+    except Exception:
+        return
+
+
+def get_usd_to_ngn_rate(force_refresh=False):
+    cached = _read_exchange_rate_cache() if not force_refresh else None
+    if cached:
+        rate, timestamp = cached
+        age_minutes = (datetime.utcnow().timestamp() - timestamp) / 60.0
+        if age_minutes <= EXCHANGE_RATE_CACHE_DURATION_MINUTES:
+            return rate
+
+    try:
+        response = http_requests.get(
+            'https://api.exchangerate.host/latest?base=USD&symbols=NGN',
+            timeout=10
+        )
+        response.raise_for_status()
+        payload = response.json()
+        rate = payload.get('rates', {}).get('NGN')
+        if rate and float(rate) > 0:
+            rate = float(rate)
+            _write_exchange_rate_cache(rate)
+            return rate
+    except Exception:
+        pass
+
+    if cached:
+        return cached[0]
+    return PAYSTACK_FALLBACK_RATE
+
+
+# Referral bonus configuration
+REFERRAL_BONUS_PERCENT = 0.05  # 5% of referred user's first deposit
+
+db.init_app(app)
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(User, int(user_id))
+
+
+# ---- Helper Functions ----
+def ensure_admin_access(user):
+    """Promote the first registered account to admin if no admin exists yet."""
+    if user.is_admin:
+        return True
+    has_admin_user = User.query.filter_by(is_admin=True).first()
+    if not has_admin_user:
+        user.is_admin = True
+        db.session.commit()
+        return True
+    return False
+
+
+# ---- Decorators ----
+def admin_required(f):
+    """Decorator to restrict routes to admin users only."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'message': 'Admin access required'}), 403
+            flash('Please log in first.')
+            return redirect(url_for('login'))
+
+        if not current_user.is_admin:
+            if ensure_admin_access(current_user):
+                flash('Admin access granted to the first registered account.')
+            else:
+                if request.path.startswith('/api/'):
+                    return jsonify({'success': False, 'message': 'Admin access required'}), 403
+                flash('Admin access required. Use the setup page to grant access.')
+                return redirect(url_for('dashboard'))
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# ---- Helper Functions ----
+def apply_growth(user):
+    """Apply growth to user's balance if enough time has passed."""
+    now = _now()
+    delta = (now - user.last_growth).total_seconds()
+    if delta >= 3.0 and user.balance > 0:
+        growth = calculate_growth(user.balance, user.last_growth)
+        if growth > 0:
+            user.balance += growth
+            trans = Transaction(
+                user_id=user.id,
+                amount=growth,
+                type='growth',
+                description='Portfolio growth'
+            )
+            db.session.add(trans)
+        user.last_growth = now
+        db.session.commit()
+
+def credit_referral_bonus(user, deposit_amount):
+    """If the user was referred, credit 5% of their first deposit to the referrer."""
+    if not user.referred_by or deposit_amount <= 0:
+        return
+
+    referrer = db.session.get(User, user.referred_by)
+    if not referrer:
+        return
+
+    # Check if this referred user already triggered a bonus (prevent multiple bonuses)
+    existing_bonus = ReferralBonus.query.filter_by(referred_id=user.id).first()
+    if existing_bonus:
+        return
+
+    bonus = deposit_amount * REFERRAL_BONUS_PERCENT
+
+    referrer.balance += bonus
+    referrer.referral_earnings += bonus
+    db.session.add(Transaction(
+        user_id=referrer.id,
+        amount=bonus,
+        type='referral_bonus',
+        description=f'Referral bonus from {user.username}'
+    ))
+    db.session.add(ReferralBonus(
+        referrer_id=referrer.id,
+        referred_id=user.id,
+        amount=bonus,
+        deposit_amount=deposit_amount
+    ))
+    db.session.commit()
+
+def is_payment_already_credited(payment_id):
+    """Check if this NowPayments payment_id has already been credited."""
+    existing = Transaction.query.filter(
+        Transaction.description.contains(f'nowpayments#{payment_id}')
+    ).first()
+    return existing is not None
+
+def is_nowpayments_configured():
+    """Check if NowPayments API key is properly configured."""
+    refresh_payment_settings()
+    return bool(NOWPAYMENTS_API_KEY) and NOWPAYMENTS_API_KEY != 'your_nowpayments_api_key_here'
+
+
+def is_paystack_configured():
+    """Check if Paystack API key is properly configured."""
+    refresh_payment_settings()
+    return bool(PAYSTACK_SECRET_KEY) and PAYSTACK_SECRET_KEY != 'your_paystack_secret_key_here'
+
+def verify_paystack_transaction(reference):
+    """Verify a Paystack transaction by reference. Returns (success, data)."""
+    if not is_paystack_configured():
+        return False, {'message': 'Paystack not configured'}
+    headers = {
+        'Authorization': f'Bearer {PAYSTACK_SECRET_KEY}',
+    }
+    try:
+        resp = http_requests.get(
+            f'https://api.paystack.co/transaction/verify/{reference}',
+            headers=headers,
+            timeout=15
+        )
+        result = resp.json()
+        if resp.status_code == 200 and result.get('status') and result['data'].get('status') == 'success':
+            return True, result['data']
+        return False, result
+    except Exception as e:
+        return False, {'message': str(e)}
+
+def generate_receipt_number():
+    """Generate unique receipt number like MWG-WD-20260625-A3F8."""
+    date_part = _now().strftime('%Y%m%d')
+    rand_part = os.urandom(2).hex().upper()
+    return f'MWG-WD-{date_part}-{rand_part}'
+
+def verify_paystack_webhook_signature(payload_body, signature):
+    """Verify Paystack webhook signature using HMAC SHA512."""
+    if not PAYSTACK_SECRET_KEY:
+        return False
+    computed = hmac.new(
+        PAYSTACK_SECRET_KEY.encode('utf-8'),
+        payload_body,
+        hashlib.sha512
+    ).hexdigest()
+    return hmac.compare_digest(computed, signature)
+
+
+# ==================================================================
+# PUBLIC ROUTES
+# ==================================================================
+
+@app.route('/')
+def index():
+    # Fetch completed withdrawals for public proof
+    completed_withdrawals = WithdrawalRequest.query.filter(
+        WithdrawalRequest.status == 'completed',
+        WithdrawalRequest.receipt_number.isnot(None)
+    ).order_by(WithdrawalRequest.receipt_generated_at.desc()).limit(6).all()
+    return render_template('index.html', completed_withdrawals=completed_withdrawals)
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        email = request.form['email']
+        password = request.form['password']
+        referral_code = request.form.get('referral_code', '').strip()
+
+        if User.query.filter_by(username=username).first():
+            flash('Username already exists')
+            return redirect(url_for('register'))
+        if User.query.filter_by(email=email).first():
+            flash('Email already registered')
+            return redirect(url_for('register'))
+
+        hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        user = User(username=username, email=email, password_hash=hashed.decode('utf-8'))
+
+        # Handle referral code
+        referrer = None
+        if referral_code:
+            referrer = User.query.filter_by(referral_code=referral_code).first()
+            if not referrer:
+                flash('Invalid referral code. You can still register without one.')
+            elif referrer.username == username:
+                flash('You cannot refer yourself.')
+            else:
+                user.referred_by = referrer.id
+
+        db.session.add(user)
+        db.session.commit()
+        flash('Registration successful! Please log in.')
+        return redirect(url_for('login'))
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+        if user and bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
+            login_user(user)
+            apply_growth(user)
+            return redirect(url_for('dashboard'))
+        flash('Invalid username or password')
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('index'))
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    apply_growth(current_user)
+    # Get referral code info
+    referred_count = User.query.filter_by(referred_by=current_user.id).count()
+    referral_bonuses = ReferralBonus.query.filter_by(referrer_id=current_user.id)\
+        .order_by(ReferralBonus.created_at.desc()).all()
+    return render_template('dashboard.html', user=current_user,
+                           paystack_public_key=PAYSTACK_PUBLIC_KEY,
+                           referred_count=referred_count,
+                           referral_bonuses=referral_bonuses)
+
+
+# ==================================================================
+# STANDARD API ENDPOINTS
+# ==================================================================
+
+@app.route('/api/balance')
+@login_required
+def get_balance():
+    apply_growth(current_user)
+    user = current_user
+    invested = user.total_deposits
+    profit = user.balance - invested
+    roi = (profit / invested * 100) if invested > 0 else 0
+    today = _now().date()
+    growth_today = db.session.query(db.func.sum(Transaction.amount)).filter(
+        Transaction.user_id == user.id,
+        Transaction.type == 'growth',
+        db.func.date(Transaction.timestamp) == today
+    ).scalar() or 0
+
+    return jsonify({
+        'balance': round(user.balance, 2),
+        'invested': round(invested, 2),
+        'profit': round(profit, 2),
+        'roi': round(roi, 1),
+        'growth_today': round(growth_today, 2),
+        'growth_percent': round((growth_today / invested * 100) if invested > 0 else 0, 1)
+    })
+
+@app.route('/api/activity')
+@login_required
+def get_activity():
+    transactions = Transaction.query.filter_by(user_id=current_user.id)\
+        .order_by(Transaction.timestamp.desc()).limit(5).all()
+    user_activities = []
+    for t in transactions:
+        user_activities.append({
+            'text': f"{t.type.capitalize()} ${t.amount:.2f}",
+            'time': t.timestamp.strftime('%I:%M %p'),
+            'type': t.type
+        })
+    fake_activities = generate_activity_feed(5)
+    combined = fake_activities + [{'name': 'You', 'text': a['text'], 'time': a['time'], 'type': a['type']} for a in user_activities]
+    random.shuffle(combined)
+    return jsonify(combined)
+
+
+# ==================================================================
+# REFERRAL API
+# ==================================================================
+
+@app.route('/api/referral/info')
+@login_required
+def get_referral_info():
+    """Get the current user's referral code, earnings, and referred count."""
+    referred_count = User.query.filter_by(referred_by=current_user.id).count()
+    bonuses = ReferralBonus.query.filter_by(referrer_id=current_user.id)\
+        .order_by(ReferralBonus.created_at.desc()).limit(20).all()
+
+    bonus_list = []
+    for b in bonuses:
+        referred_user = db.session.get(User, b.referred_id)
+        bonus_list.append({
+            'id': b.id,
+            'referred_username': referred_user.username if referred_user else 'Unknown',
+            'amount': round(b.amount, 2),
+            'deposit_amount': round(b.deposit_amount, 2),
+            'date': b.created_at.strftime('%b %d, %Y')
+        })
+
+    return jsonify({
+        'success': True,
+        'referral_code': current_user.referral_code,
+        'referral_earnings': round(current_user.referral_earnings, 2),
+        'referred_count': referred_count,
+        'bonuses': bonus_list
+    })
+
+
+# ==================================================================
+# DEPOSIT — CRYPTO (NowPayments, verified)
+# ==================================================================
+
+@app.route('/api/create-crypto-payment', methods=['POST'])
+@login_required
+def create_crypto_payment():
+    """Create a NowPayments invoice and return payment details to the frontend."""
+    if not is_nowpayments_configured():
+        return jsonify({'success': False, 'message': 'Crypto payment gateway not configured. Please contact support.'})
+
+    data = request.get_json()
+    amount_usd = float(data.get('amount', 0))
+    method = data.get('method', 'crypto-usdt')
+
+    if amount_usd <= 0:
+        return jsonify({'success': False, 'message': 'Invalid amount'})
+
+    # Map frontend method to NowPayments currency code
+    currency_map = {
+        'crypto-usdt': 'usdttrc20',
+        'crypto-btc': 'btc',
+        'crypto-eth': 'eth',
+    }
+    pay_currency = currency_map.get(method, 'usdttrc20')
+
+    headers = {
+        'x-api-key': NOWPAYMENTS_API_KEY,
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'price_amount': amount_usd,
+        'price_currency': 'usd',
+        'pay_currency': pay_currency,
+        'order_id': f'monarch_{current_user.id}_{int(_now().timestamp())}',
+        'order_description': f'Monarch Wealth deposit for {current_user.username}'
+    }
+
+    try:
+        resp = http_requests.post(
+            f'{NOWPAYMENTS_BASE}/payment',
+            json=payload,
+            headers=headers,
+            timeout=15
+        )
+        result = resp.json()
+
+        if resp.status_code == 201:
+            payment_id = str(result['payment_id'])
+
+            # Log verification record
+            pv = PaymentVerification(
+                user_id=current_user.id,
+                gateway='nowpayments',
+                gateway_reference=payment_id,
+                amount=amount_usd,
+                currency='USD',
+                payment_type='deposit',
+                status='pending',
+            )
+            pv.set_raw_response(result)
+            db.session.add(pv)
+            db.session.commit()
+
+            # Store in session for server-side verification
+            session['pending_payment'] = {
+                'payment_id': payment_id,
+                'amount_usd': amount_usd,
+                'user_id': current_user.id
+            }
+            return jsonify({
+                'success': True,
+                'payment_id': payment_id,
+                'pay_address': result.get('pay_address', ''),
+                'pay_amount': result.get('pay_amount', amount_usd),
+                'pay_currency': result.get('pay_currency', pay_currency).upper(),
+                'status': result.get('payment_status', 'waiting'),
+                'network': result.get('network', ''),
+            })
+        else:
+            error_msg = result.get('message', 'Failed to create payment. Please try again.')
+            return jsonify({'success': False, 'message': error_msg})
+
+    except http_requests.exceptions.Timeout:
+        return jsonify({'success': False, 'message': 'Payment gateway timeout. Please try again.'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+
+
+@app.route('/api/payment-status/<payment_id>')
+@login_required
+def check_payment_status(payment_id):
+    """Poll NowPayments for the current payment status.
+    Credits the user only when NowPayments confirms the payment is received.
+    """
+    if not is_nowpayments_configured():
+        return jsonify({'success': False, 'message': 'Payment gateway not configured.'})
+
+    # Prevent crediting a payment that doesn't belong to this user
+    pending = session.get('pending_payment', {})
+    if str(pending.get('payment_id')) != str(payment_id) or pending.get('user_id') != current_user.id:
+        return jsonify({'success': False, 'message': 'Payment session mismatch. Please restart.'})
+
+    # Prevent double-crediting
+    if is_payment_already_credited(payment_id):
+        return jsonify({'success': True, 'status': 'finished', 'credited': True,
+                        'new_balance': round(current_user.balance, 2)})
+
+    headers = {'x-api-key': NOWPAYMENTS_API_KEY}
+    try:
+        resp = http_requests.get(
+            f'{NOWPAYMENTS_BASE}/payment/{payment_id}',
+            headers=headers,
+            timeout=10
+        )
+        result = resp.json()
+
+        if resp.status_code != 200:
+            return jsonify({'success': False, 'message': 'Could not retrieve payment status.'})
+
+        status = result.get('payment_status', 'waiting')
+
+        # Credit user when NowPayments confirms receipt
+        if status in ('confirmed', 'finished'):
+            amount = pending['amount_usd']
+
+            current_user.balance += amount
+            current_user.total_deposits += amount
+            trans = Transaction(
+                user_id=current_user.id,
+                amount=amount,
+                type='deposit',
+                description=f'Crypto deposit via NowPayments (nowpayments#{payment_id})'
+            )
+            db.session.add(trans)
+
+            # Instant portfolio boost
+            bonus = amount * random.uniform(0.01, 0.05)
+            current_user.balance += bonus
+            trans_bonus = Transaction(
+                user_id=current_user.id,
+                amount=bonus,
+                type='growth',
+                description='Portfolio activation bonus'
+            )
+            db.session.add(trans_bonus)
+
+            # Credit referral bonus to the referrer if applicable
+            credit_referral_bonus(current_user, amount)
+
+            # Update verification record
+            pv = PaymentVerification.query.filter_by(gateway_reference=payment_id).first()
+            if pv:
+                pv.status = 'verified'
+                pv.verified_at = _now()
+                pv.set_raw_response(result)
+
+            db.session.commit()
+            session.pop('pending_payment', None)
+
+            return jsonify({
+                'success': True,
+                'status': status,
+                'credited': True,
+                'new_balance': round(current_user.balance, 2)
+            })
+
+        # Return current status without crediting
+        return jsonify({
+            'success': True,
+            'status': status,
+            'credited': False
+        })
+
+    except http_requests.exceptions.Timeout:
+        return jsonify({'success': False, 'message': 'Gateway timeout checking status.'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+# ==================================================================
+# DEPOSIT — CARD (Paystack, verified)
+# ==================================================================
+
+@app.route('/api/paystack/exchange-rate')
+@login_required
+def paystack_exchange_rate():
+    """Return the current USD->NGN exchange rate for the Paystack card flow."""
+    rate = get_usd_to_ngn_rate()
+    return jsonify({'success': True, 'rate': rate, 'fallback_rate': PAYSTACK_FALLBACK_RATE})
+
+
+@app.route('/api/deposit-card', methods=['POST'])
+@login_required
+def deposit_card():
+    """Initialize a Paystack transaction for card deposit using a transparent USD->NGN conversion."""
+    if not is_paystack_configured():
+        return jsonify({'success': False, 'message': 'Card payment gateway not configured. Please contact support.'})
+
+    data = request.get_json(silent=True) or {}
+    amount = float(data.get('amount', 0) or 0)
+    if amount <= 0:
+        return jsonify({'success': False, 'message': 'Amount must be positive'})
+
+    exchange_rate = get_usd_to_ngn_rate()
+    ngn_amount = round(amount * exchange_rate, 2)
+    paystack_amount_kobo = int(round(ngn_amount * 100))
+
+    headers = {
+        'Authorization': f'Bearer {PAYSTACK_SECRET_KEY}',
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'email': current_user.email,
+        'amount': paystack_amount_kobo,
+        'currency': 'NGN',
+        'callback_url': url_for('paystack_deposit_callback', _external=True),
+        'metadata': {
+            'user_id': current_user.id,
+            'payment_type': 'deposit',
+            'amount_usd': amount,
+            'amount_ngn': ngn_amount,
+            'exchange_rate': exchange_rate
+        }
+    }
+    try:
+        resp = http_requests.post(
+            'https://api.paystack.co/transaction/initialize',
+            json=payload,
+            headers=headers,
+            timeout=15
+        )
+        result = resp.json()
+        if resp.status_code == 200 and result.get('status'):
+            reference = result['data']['reference']
+            storage_payload = dict(result.get('data', {}))
+            storage_payload['metadata'] = payload['metadata']
+
+            # Log verification record
+            pv = PaymentVerification(
+                user_id=current_user.id,
+                gateway='paystack',
+                gateway_reference=reference,
+                amount=amount,
+                currency='USD',
+                payment_type='deposit',
+                status='pending',
+            )
+            pv.set_raw_response(storage_payload)
+            db.session.add(pv)
+            db.session.commit()
+
+            # Store in session
+            session['pending_deposit'] = {
+                'reference': reference,
+                'amount': amount,
+                'amount_usd': amount,
+                'amount_ngn': ngn_amount,
+                'exchange_rate': exchange_rate,
+                'user_id': current_user.id
+            }
+
+            return jsonify({
+                'success': True,
+                'authorization_url': result['data']['authorization_url'],
+                'reference': reference,
+                'amount_usd': amount,
+                'amount_ngn': ngn_amount,
+                'exchange_rate': exchange_rate
+            })
+        else:
+            return jsonify({'success': False, 'message': result.get('message', 'Failed to initialize payment')})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/paystack/callback')
+@login_required
+def paystack_deposit_callback():
+    """Paystack redirects here after payment. Verify and credit."""
+    reference = request.args.get('reference') or request.args.get('trxref')
+    if not reference:
+        flash('Invalid payment callback.')
+        return redirect(url_for('dashboard'))
+
+    pending = session.get('pending_deposit', {})
+
+    # Verify with Paystack
+    success, data = verify_paystack_transaction(reference)
+
+    if success:
+        amount = pending.get('amount_usd', pending.get('amount', data.get('metadata', {}).get('amount_usd', 0)))
+        amount = float(amount or 0)
+        user_id = pending.get('user_id', current_user.id)
+
+        # Prevent double-credit
+        existing = Transaction.query.filter(
+            Transaction.description.contains(f'paystack#{reference}')
+        ).first()
+
+        if not existing and amount > 0:
+            user = db.session.get(User, user_id)
+            if user:
+                user.balance += amount
+                user.total_deposits += amount
+                trans = Transaction(
+                    user_id=user.id,
+                    amount=amount,
+                    type='deposit',
+                    description=f'Card deposit via Paystack (paystack#{reference})'
+                )
+                db.session.add(trans)
+
+                # Portfolio boost
+                bonus = amount * random.uniform(0.01, 0.05)
+                user.balance += bonus
+                trans_bonus = Transaction(
+                    user_id=user.id,
+                    amount=bonus,
+                    type='growth',
+                    description='Portfolio activation bonus'
+                )
+                db.session.add(trans_bonus)
+
+                # Credit referral bonus to the referrer if applicable
+                credit_referral_bonus(user, amount)
+
+                # Update verification
+                pv = PaymentVerification.query.filter_by(gateway_reference=reference).first()
+                if pv:
+                    pv.status = 'verified'
+                    pv.verified_at = _now()
+                    pv.set_raw_response(data)
+
+                db.session.commit()
+                session.pop('pending_deposit', None)
+                flash(f'✅ Deposit of ${amount:.2f} confirmed and credited!')
+        else:
+            flash('Payment already credited.')
+    else:
+        flash('❌ Payment verification failed. Please contact support.')
+
+    return redirect(url_for('dashboard'))
+
+
+# ==================================================================
+# WITHDRAWAL SYSTEM (real payments only)
+# ==================================================================
+
+@app.route('/api/withdrawal/request', methods=['POST'])
+@login_required
+def request_withdrawal():
+    data = request.get_json() or {}
+    amount = float(data.get('amount', 0))
+    if amount < 10:
+        return jsonify({'success': False, 'message': 'Minimum withdrawal is $10.00'})
+
+    apply_growth(current_user)
+    if amount > current_user.balance:
+        return jsonify({'success': False, 'message': 'Insufficient balance'})
+
+    # Deduct and reserve from user's balance
+    current_user.balance -= amount
+
+    tax_amount = amount * 0.20
+    withdrawal = WithdrawalRequest(
+        user_id=current_user.id,
+        amount=amount,
+        tax_amount=tax_amount,
+        status='tax_required',
+        tax_paid=False
+    )
+    db.session.add(withdrawal)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'id': withdrawal.id,
+            'withdrawal_id': withdrawal.id,
+            'amount': round(amount, 2),
+            'tax_amount': round(tax_amount, 2),
+            'status': withdrawal.status,
+            'payment_options': [
+                { 'method': 'crypto', 'gateway': 'nowpayments' },
+                { 'method': 'card', 'gateway': 'paystack' }
+            ]
+        }
+    })
+
+@app.route('/api/withdrawal/status/<withdrawal_id>')
+@login_required
+def get_withdrawal_status(withdrawal_id):
+    withdrawal = WithdrawalRequest.query.filter_by(id=withdrawal_id, user_id=current_user.id).first()
+    if not withdrawal:
+        return jsonify({'success': False, 'message': 'Withdrawal request not found'}), 404
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'id': withdrawal.id,
+            'amount': round(withdrawal.amount, 2),
+            'tax_amount': round(withdrawal.tax_amount, 2),
+            'tax_paid': withdrawal.tax_paid,
+            'status': withdrawal.status,
+            'created_at': withdrawal.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'receipt_number': withdrawal.receipt_number,
+            'estimated_processing_time': '3-5 business days'
+        }
+    })
+
+@app.route('/api/withdrawal/active-pending')
+@login_required
+def get_active_pending_withdrawal():
+    withdrawal = WithdrawalRequest.query.filter(
+        WithdrawalRequest.user_id == current_user.id,
+        WithdrawalRequest.status.in_(['tax_required', 'pending', 'completed', 'rejected'])
+    ).order_by(WithdrawalRequest.created_at.desc()).first()
+
+    if withdrawal:
+        return jsonify({
+            'success': True,
+            'data': {
+                'id': withdrawal.id,
+                'amount': round(withdrawal.amount, 2),
+                'tax_amount': round(withdrawal.tax_amount, 2),
+                'tax_paid': withdrawal.tax_paid,
+                'status': withdrawal.status,
+                'reference': withdrawal.reference,
+                'payment_method': withdrawal.payment_method,
+                'bank_name': withdrawal.bank_name or '',
+                'account_name': withdrawal.account_name or '',
+                'account_number': withdrawal.account_number or '',
+                'routing_number': withdrawal.routing_number or '',
+                'swift_code': withdrawal.swift_code or '',
+                'admin_notes': withdrawal.admin_notes or '',
+                'receipt_number': withdrawal.receipt_number or '',
+                'created_at': withdrawal.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            }
+        })
+    return jsonify({'success': False, 'message': 'No active requests'})
+
+
+# ---- Tax Payment via Crypto (NowPayments — real only) ----
+
+@app.route('/api/withdrawal/pay-tax-crypto', methods=['POST'])
+@login_required
+def pay_tax_crypto():
+    if not is_nowpayments_configured():
+        return jsonify({'success': False, 'message': 'Crypto payment gateway not configured. Please contact support.'})
+
+    data = request.get_json() or {}
+    withdrawal_id = data.get('withdrawal_id')
+    withdrawal = WithdrawalRequest.query.filter_by(id=withdrawal_id, user_id=current_user.id).first()
+
+    if not withdrawal:
+        return jsonify({'success': False, 'message': 'Withdrawal request not found'}), 404
+    if withdrawal.tax_paid:
+        return jsonify({'success': False, 'message': 'Tax has already been paid for this request'})
+
+    method = data.get('method', 'crypto-usdt')
+    currency_map = {
+        'crypto-usdt': 'usdttrc20',
+        'crypto-btc': 'btc',
+        'crypto-eth': 'eth',
+    }
+    pay_currency = currency_map.get(method, 'usdttrc20')
+
+    headers = {
+        'x-api-key': NOWPAYMENTS_API_KEY,
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'price_amount': withdrawal.tax_amount,
+        'price_currency': 'usd',
+        'pay_currency': pay_currency,
+        'order_id': f'tax_{withdrawal.id}_{int(_now().timestamp())}',
+        'order_description': f'Compliance tax payment for withdrawal {withdrawal.id}'
+    }
+    try:
+        resp = http_requests.post(
+            f'{NOWPAYMENTS_BASE}/payment',
+            json=payload,
+            headers=headers,
+            timeout=15
+        )
+        result = resp.json()
+        if resp.status_code == 201:
+            payment_id = str(result['payment_id'])
+            withdrawal.reference = payment_id
+            withdrawal.payment_method = 'nowpayments'
+
+            # Log verification
+            pv = PaymentVerification(
+                user_id=current_user.id,
+                gateway='nowpayments',
+                gateway_reference=payment_id,
+                amount=withdrawal.tax_amount,
+                currency='USD',
+                payment_type='tax_payment',
+                status='pending',
+            )
+            pv.set_raw_response(result)
+            db.session.add(pv)
+            db.session.commit()
+
+            return jsonify({
+                'success': True,
+                'invoice': {
+                    'payment_id': payment_id,
+                    'pay_address': result.get('pay_address', ''),
+                    'pay_amount': result.get('pay_amount', withdrawal.tax_amount),
+                    'pay_currency': result.get('pay_currency', pay_currency).upper(),
+                    'status': result.get('payment_status', 'waiting'),
+                    'network': result.get('network', ''),
+                }
+            })
+        else:
+            return jsonify({'success': False, 'message': result.get('message', 'Failed to create crypto invoice')})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+# ---- Tax Payment via Card (Paystack — real only) ----
+
+@app.route('/api/withdrawal/pay-tax-card', methods=['POST'])
+@login_required
+def pay_tax_card():
+    if not is_paystack_configured():
+        return jsonify({'success': False, 'message': 'Card payment gateway not configured. Please contact support.'})
+
+    data = request.get_json() or {}
+    withdrawal_id = data.get('withdrawal_id')
+    withdrawal = WithdrawalRequest.query.filter_by(id=withdrawal_id, user_id=current_user.id).first()
+
+    if not withdrawal:
+        return jsonify({'success': False, 'message': 'Withdrawal request not found'}), 404
+    if withdrawal.tax_paid:
+        return jsonify({'success': False, 'message': 'Tax has already been paid for this request'})
+
+    headers = {
+        'Authorization': f'Bearer {PAYSTACK_SECRET_KEY}',
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'email': current_user.email,
+        'amount': int(withdrawal.tax_amount * 100),
+        'currency': 'USD',
+        'callback_url': url_for('paystack_tax_callback', _external=True),
+        'metadata': {
+            'withdrawal_id': withdrawal.id,
+            'is_tax_payment': True,
+            'user_id': current_user.id
+        }
+    }
+    try:
+        resp = http_requests.post(
+            'https://api.paystack.co/transaction/initialize',
+            json=payload,
+            headers=headers,
+            timeout=15
+        )
+        result = resp.json()
+        if resp.status_code == 200 and result.get('status'):
+            reference = result['data']['reference']
+            withdrawal.reference = reference
+            withdrawal.payment_method = 'paystack'
+
+            # Log verification
+            pv = PaymentVerification(
+                user_id=current_user.id,
+                gateway='paystack',
+                gateway_reference=reference,
+                amount=withdrawal.tax_amount,
+                currency='USD',
+                payment_type='tax_payment',
+                status='pending',
+            )
+            pv.set_raw_response(result['data'])
+            db.session.add(pv)
+            db.session.commit()
+
+            return jsonify({
+                'success': True,
+                'authorization_url': result['data']['authorization_url']
+            })
+        else:
+            return jsonify({'success': False, 'message': result.get('message', 'Failed to initialize Paystack transaction')})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/paystack/tax-callback')
+@login_required
+def paystack_tax_callback():
+    """Paystack redirects here after tax payment. Verify and update withdrawal."""
+    reference = request.args.get('reference') or request.args.get('trxref')
+    if not reference:
+        flash('Invalid payment callback.')
+        return redirect(url_for('dashboard'))
+
+    success, data = verify_paystack_transaction(reference)
+
+    if success:
+        withdrawal = WithdrawalRequest.query.filter_by(reference=reference).first()
+        if withdrawal and not withdrawal.tax_paid:
+            withdrawal.tax_paid = True
+            withdrawal.status = 'pending'
+            withdrawal.updated_at = _now()
+
+            trans = Transaction(
+                user_id=withdrawal.user_id,
+                amount=withdrawal.tax_amount,
+                type='tax_payment',
+                description=f'Compliance Tax Payment (paystack#{reference})',
+                tax_payment_for=withdrawal.id,
+                is_tax_payment=True
+            )
+            db.session.add(trans)
+
+            # Update verification
+            pv = PaymentVerification.query.filter_by(gateway_reference=reference).first()
+            if pv:
+                pv.status = 'verified'
+                pv.verified_at = _now()
+                pv.set_raw_response(data)
+
+            db.session.commit()
+            flash('✅ Tax payment verified! Your withdrawal is now being processed.')
+        else:
+            flash('Tax payment already processed.')
+    else:
+        flash('❌ Tax payment verification failed. Please contact support.')
+
+    return redirect(url_for('dashboard'))
+
+
+# ---- Webhooks (server-to-server verification) ----
+
+@app.route('/api/webhook/nowpayments', methods=['POST'])
+def nowpayments_webhook():
+    """Consolidated NowPayments webhook for deposits and tax payments."""
+    payload = request.json or {}
+    status = payload.get('payment_status')
+    payment_id = str(payload.get('payment_id', ''))
+
+    if status not in ('finished', 'confirmed') or not payment_id:
+        return jsonify({'status': 'ignored'}), 200
+
+    # Check if it's a tax payment
+    withdrawal = WithdrawalRequest.query.filter_by(reference=payment_id).first()
+    if withdrawal and not withdrawal.tax_paid:
+        withdrawal.tax_paid = True
+        withdrawal.status = 'pending'
+        withdrawal.updated_at = _now()
+
+        trans = Transaction(
+            user_id=withdrawal.user_id,
+            amount=withdrawal.tax_amount,
+            type='tax_payment',
+            description=f'Compliance Tax Payment (nowpayments#{payment_id})',
+            tax_payment_for=withdrawal.id,
+            is_tax_payment=True
+        )
+        db.session.add(trans)
+
+        pv = PaymentVerification.query.filter_by(gateway_reference=payment_id).first()
+        if pv:
+            pv.status = 'verified'
+            pv.verified_at = _now()
+            pv.set_raw_response(payload)
+
+        db.session.commit()
+        return jsonify({'status': 'success'}), 200
+
+    # Check if it's a deposit (not already credited)
+    if not is_payment_already_credited(payment_id):
+        pv = PaymentVerification.query.filter_by(gateway_reference=payment_id).first()
+        if pv and pv.status == 'pending':
+            user = db.session.get(User, pv.user_id)
+            if user:
+                user.balance += pv.amount
+                user.total_deposits += pv.amount
+                trans = Transaction(
+                    user_id=user.id,
+                    amount=pv.amount,
+                    type='deposit',
+                    description=f'Crypto deposit via NowPayments (nowpayments#{payment_id})'
+                )
+                db.session.add(trans)
+                # Credit referral bonus
+                credit_referral_bonus(user, pv.amount)
+                pv.status = 'verified'
+                pv.verified_at = _now()
+                pv.set_raw_response(payload)
+                db.session.commit()
+
+    return jsonify({'status': 'success'}), 200
+
+
+@app.route('/api/webhook/paystack', methods=['POST'])
+def paystack_webhook():
+    """Consolidated Paystack webhook for deposits and tax payments."""
+    # Verify signature
+    signature = request.headers.get('x-paystack-signature', '')
+    if is_paystack_configured() and signature:
+        if not verify_paystack_webhook_signature(request.data, signature):
+            return jsonify({'status': 'invalid signature'}), 400
+
+    payload = request.json or {}
+    if payload.get('event') != 'charge.success':
+        return jsonify({'status': 'ignored'}), 200
+
+    data = payload.get('data', {})
+    reference = data.get('reference', '')
+    metadata = data.get('metadata', {})
+
+    if metadata.get('is_tax_payment'):
+        # Tax payment
+        withdrawal = WithdrawalRequest.query.filter_by(reference=reference).first()
+        if withdrawal and not withdrawal.tax_paid:
+            withdrawal.tax_paid = True
+            withdrawal.status = 'pending'
+            withdrawal.updated_at = _now()
+
+            trans = Transaction(
+                user_id=withdrawal.user_id,
+                amount=withdrawal.tax_amount,
+                type='tax_payment',
+                description=f'Compliance Tax Payment (paystack#{reference})',
+                tax_payment_for=withdrawal.id,
+                is_tax_payment=True
+            )
+            db.session.add(trans)
+
+            pv = PaymentVerification.query.filter_by(gateway_reference=reference).first()
+            if pv:
+                pv.status = 'verified'
+                pv.verified_at = _now()
+                pv.set_raw_response(data)
+
+            db.session.commit()
+    else:
+        # Deposit
+        existing = Transaction.query.filter(
+            Transaction.description.contains(f'paystack#{reference}')
+        ).first()
+        if not existing:
+            pv = PaymentVerification.query.filter_by(gateway_reference=reference).first()
+            if pv and pv.status == 'pending':
+                user = db.session.get(User, pv.user_id)
+                if user:
+                    user.balance += pv.amount
+                    user.total_deposits += pv.amount
+                    trans = Transaction(
+                        user_id=user.id,
+                        amount=pv.amount,
+                        type='deposit',
+                        description=f'Card deposit via Paystack (paystack#{reference})'
+                    )
+                    db.session.add(trans)
+                    # Credit referral bonus
+                    credit_referral_bonus(user, pv.amount)
+                    pv.status = 'verified'
+                    pv.verified_at = _now()
+                    pv.set_raw_response(data)
+                    db.session.commit()
+
+    return jsonify({'status': 'success'}), 200
+
+
+# ==================================================================
+# WITHDRAWAL RECEIPTS
+# ==================================================================
+
+@app.route('/api/withdrawal/receipts')
+@login_required
+def get_user_receipts():
+    """Get all completed withdrawal receipts for the logged-in user."""
+    withdrawals = WithdrawalRequest.query.filter(
+        WithdrawalRequest.user_id == current_user.id,
+        WithdrawalRequest.status == 'completed',
+        WithdrawalRequest.receipt_number.isnot(None)
+    ).order_by(WithdrawalRequest.receipt_generated_at.desc()).all()
+
+    receipts = []
+    for w in withdrawals:
+        receipts.append({
+            'id': w.id,
+            'receipt_number': w.receipt_number,
+            'amount': round(w.amount, 2),
+            'tax_amount': round(w.tax_amount, 2),
+            'net_amount': round(w.amount - w.tax_amount, 2),
+            'bank_name': w.bank_name or 'N/A',
+            'account_number': w.account_number or 'N/A',
+            'account_name': w.account_name or 'N/A',
+            'receipt_image': w.receipt_image or '',
+            'status': w.status,
+            'date': w.receipt_generated_at.strftime('%B %d, %Y') if w.receipt_generated_at else w.created_at.strftime('%B %d, %Y'),
+        })
+    return jsonify({'success': True, 'receipts': receipts})
+
+
+# ==================================================================
+# ADMIN DASHBOARD
+# ==================================================================
+
+@app.route('/admin/setup', methods=['GET', 'POST'])
+@login_required
+def admin_setup_page():
+    """Simple browser-based admin setup page for the first admin account."""
+    if current_user.is_admin:
+        return redirect(url_for('admin_dashboard'))
+
+    if request.method == 'POST':
+        setup_key = request.form.get('setup_key', '').strip()
+        if setup_key and ADMIN_SETUP_KEY and setup_key == ADMIN_SETUP_KEY:
+            current_user.is_admin = True
+            db.session.commit()
+            flash('Admin access granted successfully.')
+            return redirect(url_for('admin_dashboard'))
+
+        if not User.query.filter_by(is_admin=True).first() and not ADMIN_SETUP_KEY:
+            current_user.is_admin = True
+            db.session.commit()
+            flash('Admin access granted automatically for the first account.')
+            return redirect(url_for('admin_dashboard'))
+
+        flash('Invalid admin setup key.')
+
+    return render_template_string('''
+    <!doctype html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Admin Setup</title>
+        <style>
+            body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 2rem; }
+            .box { max-width: 420px; margin: 3rem auto; background: #111827; padding: 1.5rem; border-radius: 12px; }
+            input { width: 100%; padding: 0.7rem; margin-top: 0.5rem; border-radius: 8px; border: 1px solid #374151; }
+            button { margin-top: 1rem; padding: 0.7rem 1rem; background: #c9a84c; color: #111827; border: none; border-radius: 8px; cursor: pointer; }
+        </style>
+    </head>
+    <body>
+        <div class="box">
+            <h2>Admin Access Setup</h2>
+            <p>Enter the admin setup key from the .env file to grant access to this account.</p>
+            <form method="post">
+                <label for="setup_key">Setup Key</label>
+                <input id="setup_key" name="setup_key" type="password" required>
+                <button type="submit">Grant Admin Access</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    ''')
+
+
+@app.route('/admin')
+@login_required
+@admin_required
+def admin_dashboard():
+    return render_template('admin.html', user=current_user)
+
+
+@app.route('/api/admin/setup', methods=['POST'])
+def admin_setup():
+    """One-time admin setup. Protected by ADMIN_SETUP_KEY env variable."""
+    data = request.get_json() or {}
+    setup_key = data.get('setup_key', '')
+    username = data.get('username', '')
+
+    if not ADMIN_SETUP_KEY or setup_key != ADMIN_SETUP_KEY:
+        return jsonify({'success': False, 'message': 'Invalid setup key'}), 403
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+
+    user.is_admin = True
+    db.session.commit()
+    return jsonify({'success': True, 'message': f'{username} is now an admin'})
+
+
+@app.route('/api/admin/stats')
+@login_required
+@admin_required
+def admin_stats():
+    """Get monthly stats for admin dashboard."""
+    now = _now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # Total deposits this month
+    deposits_month = db.session.query(db.func.sum(Transaction.amount)).filter(
+        Transaction.type == 'deposit',
+        Transaction.timestamp >= month_start
+    ).scalar() or 0
+
+    # Total tax payments this month
+    tax_month = db.session.query(db.func.sum(Transaction.amount)).filter(
+        Transaction.type == 'tax_payment',
+        Transaction.timestamp >= month_start
+    ).scalar() or 0
+
+    # Total withdrawal requests this month
+    withdrawals_month = db.session.query(db.func.sum(WithdrawalRequest.amount)).filter(
+        WithdrawalRequest.created_at >= month_start
+    ).scalar() or 0
+
+    # Pending withdrawals count
+    pending_count = WithdrawalRequest.query.filter(
+        WithdrawalRequest.status.in_(['pending', 'tax_required'])
+    ).count()
+
+    # Active users
+    active_users = User.query.count()
+
+    # Total verified payments
+    verified_payments = PaymentVerification.query.filter(
+        PaymentVerification.status == 'verified',
+        PaymentVerification.verified_at >= month_start
+    ).count()
+
+    # Monthly totals for last 6 months
+    monthly_data = []
+    for i in range(5, -1, -1):
+        m_start = (now.replace(day=1) - timedelta(days=30 * i)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if i > 0:
+            m_end = (now.replace(day=1) - timedelta(days=30 * (i - 1))).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        else:
+            m_end = now
+
+        m_deposits = db.session.query(db.func.sum(Transaction.amount)).filter(
+            Transaction.type == 'deposit',
+            Transaction.timestamp >= m_start,
+            Transaction.timestamp < m_end
+        ).scalar() or 0
+
+        m_tax = db.session.query(db.func.sum(Transaction.amount)).filter(
+            Transaction.type == 'tax_payment',
+            Transaction.timestamp >= m_start,
+            Transaction.timestamp < m_end
+        ).scalar() or 0
+
+        monthly_data.append({
+            'month': m_start.strftime('%b %Y'),
+            'deposits': round(m_deposits, 2),
+            'tax_payments': round(m_tax, 2)
+        })
+
+    return jsonify({
+        'success': True,
+        'deposits_month': round(deposits_month, 2),
+        'tax_month': round(tax_month, 2),
+        'withdrawals_month': round(withdrawals_month, 2),
+        'pending_count': pending_count,
+        'active_users': active_users,
+        'verified_payments': verified_payments,
+        'monthly_data': monthly_data
+    })
+
+
+@app.route('/api/admin/withdrawals')
+@login_required
+@admin_required
+def admin_withdrawals():
+    """List all withdrawal requests for admin."""
+    status_filter = request.args.get('status', '')
+    query = WithdrawalRequest.query
+
+    if status_filter:
+        query = query.filter_by(status=status_filter)
+
+    withdrawals = query.order_by(WithdrawalRequest.created_at.desc()).all()
+    result = []
+    for w in withdrawals:
+        user = db.session.get(User, w.user_id)
+        result.append({
+            'id': w.id,
+            'username': user.username if user else 'Unknown',
+            'email': user.email if user else '',
+            'amount': round(w.amount, 2),
+            'tax_amount': round(w.tax_amount, 2),
+            'tax_paid': w.tax_paid,
+            'status': w.status,
+            'payment_method': w.payment_method or 'N/A',
+            'reference': w.reference or '',
+            'receipt_number': w.receipt_number or '',
+            'bank_name': w.bank_name or '',
+            'account_number': w.account_number or '',
+            'account_name': w.account_name or '',
+            'routing_number': w.routing_number or '',
+            'swift_code': w.swift_code or '',
+            'member_since': user.created_at.strftime('%b %d, %Y') if user else 'N/A',
+            'account_balance': round(user.balance, 2) if user else 0.0,
+            'admin_notes': w.admin_notes or '',
+            'created_at': w.created_at.strftime('%Y-%m-%d %H:%M'),
+        })
+    return jsonify({'success': True, 'withdrawals': result})
+
+
+@app.route('/api/admin/withdrawal/<withdrawal_id>/approve', methods=['POST'])
+@login_required
+@admin_required
+def admin_approve_withdrawal(withdrawal_id):
+    """Approve a withdrawal request."""
+    withdrawal = db.session.get(WithdrawalRequest, withdrawal_id)
+    if not withdrawal:
+        return jsonify({'success': False, 'message': 'Not found'}), 404
+
+    data = request.get_json() or {}
+    withdrawal.status = 'completed'
+    withdrawal.updated_at = _now()
+    withdrawal.admin_notes = data.get('notes', withdrawal.admin_notes)
+
+    # Generate receipt if not already generated
+    if not withdrawal.receipt_number:
+        withdrawal.receipt_number = generate_receipt_number()
+        withdrawal.receipt_generated_at = _now()
+
+    # Log withdrawal transaction
+    existing_withdrawal_tx = Transaction.query.filter(
+        Transaction.user_id == withdrawal.user_id,
+        Transaction.type == 'withdrawal',
+        Transaction.description.contains(withdrawal.id)
+    ).first()
+    if not existing_withdrawal_tx:
+        trans = Transaction(
+            user_id=withdrawal.user_id,
+            amount=withdrawal.amount,
+            type='withdrawal',
+            description=f'Withdrawal completed ({withdrawal.id})'
+        )
+        db.session.add(trans)
+
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Withdrawal approved', 'receipt_number': withdrawal.receipt_number})
+
+
+@app.route('/api/admin/withdrawal/<withdrawal_id>/reject', methods=['POST'])
+@login_required
+@admin_required
+def admin_reject_withdrawal(withdrawal_id):
+    """Reject a withdrawal request and refund balance."""
+    withdrawal = db.session.get(WithdrawalRequest, withdrawal_id)
+    if not withdrawal:
+        return jsonify({'success': False, 'message': 'Not found'}), 404
+
+    data = request.get_json() or {}
+    withdrawal.status = 'rejected'
+    withdrawal.updated_at = _now()
+    withdrawal.admin_notes = data.get('notes', 'Withdrawal rejected by admin')
+
+    # Refund balance
+    user = db.session.get(User, withdrawal.user_id)
+    if user:
+        user.balance += withdrawal.amount
+
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Withdrawal rejected and balance refunded'})
+
+
+@app.route('/api/admin/withdrawal/<withdrawal_id>/generate-receipt', methods=['POST'])
+@login_required
+@admin_required
+def admin_generate_receipt(withdrawal_id):
+    """Generate a custom receipt for a withdrawal."""
+    withdrawal = db.session.get(WithdrawalRequest, withdrawal_id)
+    if not withdrawal:
+        return jsonify({'success': False, 'message': 'Not found'}), 404
+
+    # Support both JSON and multipart form data
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        data = request.form
+    else:
+        data = request.get_json() or {}
+
+    withdrawal.bank_name = data.get('bank_name', withdrawal.bank_name)
+    withdrawal.account_number = data.get('account_number', withdrawal.account_number)
+    withdrawal.account_name = data.get('account_name', withdrawal.account_name)
+    withdrawal.admin_notes = data.get('admin_notes', withdrawal.admin_notes)
+
+    # File upload handling
+    if 'receipt_image' in request.files:
+        file = request.files['receipt_image']
+        if file and file.filename != '':
+            ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+            if ext in {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}:
+                filename = secure_filename(f"receipt_{withdrawal_id}_{file.filename}")
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                withdrawal.receipt_image = filename
+
+    if not withdrawal.receipt_number:
+        withdrawal.receipt_number = generate_receipt_number()
+
+    withdrawal.receipt_generated_at = _now()
+
+    if withdrawal.status in ('pending', 'tax_required'):
+        withdrawal.status = 'completed'
+
+    # Ensure withdrawal transaction is logged
+    existing_tx = Transaction.query.filter(
+        Transaction.user_id == withdrawal.user_id,
+        Transaction.type == 'withdrawal',
+        Transaction.description.contains(withdrawal.id)
+    ).first()
+    if not existing_tx:
+        trans = Transaction(
+            user_id=withdrawal.user_id,
+            amount=withdrawal.amount,
+            type='withdrawal',
+            description=f'Withdrawal completed ({withdrawal.id})'
+        )
+        db.session.add(trans)
+
+    db.session.commit()
+
+    user = db.session.get(User, withdrawal.user_id)
+    return jsonify({
+        'success': True,
+        'receipt': {
+            'receipt_number': withdrawal.receipt_number,
+            'username': user.username if user else 'Unknown',
+            'email': user.email if user else '',
+            'amount': round(withdrawal.amount, 2),
+            'tax_amount': round(withdrawal.tax_amount, 2),
+            'net_amount': round(withdrawal.amount - withdrawal.tax_amount, 2),
+            'bank_name': withdrawal.bank_name or '',
+            'account_number': withdrawal.account_number or '',
+            'account_name': withdrawal.account_name or '',
+            'admin_notes': withdrawal.admin_notes or '',
+            'receipt_image': withdrawal.receipt_image or '',
+            'date': withdrawal.receipt_generated_at.strftime('%B %d, %Y at %I:%M %p'),
+        }
+    })
+
+
+@app.route('/api/withdrawal/receipt/<withdrawal_id>')
+@login_required
+def get_single_receipt(withdrawal_id):
+    """Get details of a single completed withdrawal receipt."""
+    withdrawal = WithdrawalRequest.query.filter_by(
+        id=withdrawal_id,
+        status='completed'
+    ).first()
+    if not withdrawal or not withdrawal.receipt_number:
+        return jsonify({'success': False, 'message': 'Receipt not found'}), 404
+
+    # Check ownership or admin status
+    if withdrawal.user_id != current_user.id and not current_user.is_admin:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    user = db.session.get(User, withdrawal.user_id)
+    return jsonify({
+        'success': True,
+        'receipt': {
+            'id': withdrawal.id,
+            'receipt_number': withdrawal.receipt_number,
+            'username': user.username if user else 'Unknown',
+            'email': user.email if user else '',
+            'amount': round(withdrawal.amount, 2),
+            'tax_amount': round(withdrawal.tax_amount, 2),
+            'net_amount': round(withdrawal.amount - withdrawal.tax_amount, 2),
+            'bank_name': withdrawal.bank_name or 'N/A',
+            'account_number': withdrawal.account_number or 'N/A',
+            'account_name': withdrawal.account_name or 'N/A',
+            'admin_notes': withdrawal.admin_notes or '',
+            'receipt_image': withdrawal.receipt_image or '',
+            'date': withdrawal.receipt_generated_at.strftime('%B %d, %Y') if withdrawal.receipt_generated_at else withdrawal.created_at.strftime('%B %d, %Y'),
+        }
+    })
+
+
+@app.route('/receipt/print/<withdrawal_id>')
+@login_required
+def render_printable_receipt(withdrawal_id):
+    """Render a dedicated printable view of the payout receipt."""
+    withdrawal = WithdrawalRequest.query.filter_by(
+        id=withdrawal_id,
+        status='completed'
+    ).first()
+    if not withdrawal or not withdrawal.receipt_number:
+        flash('Receipt not found.')
+        return redirect(url_for('dashboard'))
+
+    # Check ownership or admin status
+    if withdrawal.user_id != current_user.id and not current_user.is_admin:
+        flash('Access denied.')
+        return redirect(url_for('dashboard'))
+
+    user = db.session.get(User, withdrawal.user_id)
+    receipt_data = {
+        'receipt_number': withdrawal.receipt_number,
+        'username': user.username if user else 'Unknown',
+        'email': user.email if user else '',
+        'amount': round(withdrawal.amount, 2),
+        'tax_amount': round(withdrawal.tax_amount, 2),
+        'net_amount': round(withdrawal.amount - withdrawal.tax_amount, 2),
+        'bank_name': withdrawal.bank_name or 'Monarch Partner Bank',
+        'account_number': withdrawal.account_number or 'N/A',
+        'account_name': withdrawal.account_name or 'N/A',
+        'admin_notes': withdrawal.admin_notes or '',
+        'receipt_image': withdrawal.receipt_image or '',
+        'date': withdrawal.receipt_generated_at.strftime('%B %d, %Y at %I:%M %p') if withdrawal.receipt_generated_at else withdrawal.created_at.strftime('%B %d, %Y at %I:%M %p'),
+    }
+
+    return render_template('receipt_print.html', receipt=receipt_data)
+
+
+@app.route('/api/admin/payments')
+@login_required
+@admin_required
+def admin_payments():
+    """List all verified payments for admin."""
+    month_filter = request.args.get('month', '')
+    query = PaymentVerification.query
+
+    if month_filter:
+        try:
+            filter_date = datetime.strptime(month_filter, '%Y-%m')
+            next_month = (filter_date.replace(day=28) + timedelta(days=4)).replace(day=1)
+            query = query.filter(
+                PaymentVerification.created_at >= filter_date,
+                PaymentVerification.created_at < next_month
+            )
+        except ValueError:
+            pass
+
+    payments = query.order_by(PaymentVerification.created_at.desc()).limit(100).all()
+    result = []
+    for p in payments:
+        user = User.query.get(p.user_id)
+        result.append({
+            'id': p.id,
+            'username': user.username if user else 'Unknown',
+            'gateway': p.gateway,
+            'reference': p.gateway_reference,
+            'amount': round(p.amount, 2),
+            'currency': p.currency,
+            'payment_type': p.payment_type,
+            'status': p.status,
+            'verified_at': p.verified_at.strftime('%Y-%m-%d %H:%M') if p.verified_at else 'Pending',
+            'created_at': p.created_at.strftime('%Y-%m-%d %H:%M'),
+        })
+    return jsonify({'success': True, 'payments': result})
+
+
+# ==================================================================
+# BANK ACCOUNT REPOSITORY API (Admin)
+# ==================================================================
+
+from database import BankAccount, MarketingReceipt
+
+@app.route('/api/admin/bank-accounts')
+@login_required
+@admin_required
+def admin_bank_accounts():
+    """List all bank accounts in the repository."""
+    accounts = BankAccount.query.order_by(BankAccount.bank_name).all()
+    result = []
+    for a in accounts:
+        result.append({
+            'id': a.id,
+            'bank_name': a.bank_name,
+            'account_name': a.account_name,
+            'account_number': a.account_number,
+            'routing_number': a.routing_number or '',
+            'swift_code': a.swift_code or '',
+            'country': a.country or 'United States',
+            'currency': a.currency or 'USD',
+            'is_active': a.is_active,
+            'created_at': a.created_at.strftime('%b %d, %Y') if a.created_at else ''
+        })
+    return jsonify({'success': True, 'accounts': result})
+
+
+@app.route('/api/admin/bank-accounts/add', methods=['POST'])
+@login_required
+@admin_required
+def admin_bank_accounts_add():
+    """Add a new bank account to the repository."""
+    data = request.get_json() or {}
+    errors = []
+    if not data.get('bank_name'): errors.append('Bank name is required')
+    if not data.get('account_name'): errors.append('Account name is required')
+    if not data.get('account_number'): errors.append('Account number is required')
+    if errors:
+        return jsonify({'success': False, 'message': '; '.join(errors)}), 400
+
+    account = BankAccount(
+        bank_name=data['bank_name'],
+        account_name=data['account_name'],
+        account_number=data['account_number'],
+        routing_number=data.get('routing_number', ''),
+        swift_code=data.get('swift_code', ''),
+        country=data.get('country', 'United States'),
+        currency=data.get('currency', 'USD'),
+        is_active=True
+    )
+    db.session.add(account)
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Bank account added', 'id': account.id})
+
+
+@app.route('/api/admin/bank-accounts/<int:account_id>', methods=['PUT', 'DELETE'])
+@login_required
+@admin_required
+def admin_bank_accounts_modify(account_id):
+    """Update or delete a bank account."""
+    account = db.session.get(BankAccount, account_id)
+    if not account:
+        return jsonify({'success': False, 'message': 'Account not found'}), 404
+
+    if request.method == 'DELETE':
+        db.session.delete(account)
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Account deleted'})
+
+    # PUT - update
+    data = request.get_json() or {}
+    account.bank_name = data.get('bank_name', account.bank_name)
+    account.account_name = data.get('account_name', account.account_name)
+    account.account_number = data.get('account_number', account.account_number)
+    account.routing_number = data.get('routing_number', account.routing_number)
+    account.swift_code = data.get('swift_code', account.swift_code)
+    account.country = data.get('country', account.country)
+    account.currency = data.get('currency', account.currency)
+    account.is_active = data.get('is_active', account.is_active)
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Account updated'})
+
+
+# ==================================================================
+# MARKETING RECEIPT GENERATOR (Admin)
+# ==================================================================
+
+@app.route('/api/admin/receipts/generate', methods=['POST'])
+@login_required
+@admin_required
+def admin_generate_marketing_receipt():
+    """Generate a standalone marketing receipt (not tied to a withdrawal)."""
+    data = request.get_json() or {}
+    errors = []
+    if not data.get('recipient_name'): errors.append('Recipient name required')
+    if not data.get('amount'): errors.append('Amount required')
+    if errors:
+        return jsonify({'success': False, 'message': '; '.join(errors)}), 400
+
+    amount = float(data['amount'])
+    receipt_num = generate_receipt_number()
+    processed_date = _now()
+
+    receipt = MarketingReceipt(
+        receipt_number=receipt_num,
+        recipient_name=data['recipient_name'],
+        recipient_email=data.get('recipient_email', ''),
+        amount=amount,
+        currency=data.get('currency', 'USD'),
+        payment_method=data.get('payment_method', 'Bank Transfer'),
+        reference=data.get('reference', f'MWG-MKT-{_now().strftime("%Y%m%d")}-{random.randint(100,999)}'),
+        bank_name=data.get('bank_name', ''),
+        account_name=data.get('account_name', ''),
+        account_number=data.get('account_number', ''),
+        routing_number=data.get('routing_number', ''),
+        swift_code=data.get('swift_code', ''),
+        status='generated',
+        member_since=data.get('member_since', ''),
+        watermark=data.get('watermark', 'Confidential'),
+        processed_date=processed_date,
+        generated_by=current_user.id
+    )
+    db.session.add(receipt)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'receipt': {
+            'id': receipt.id,
+            'receipt_number': receipt.receipt_number,
+            'recipient_name': receipt.recipient_name,
+            'recipient_email': receipt.recipient_email or '',
+            'amount': round(receipt.amount, 2),
+            'currency': receipt.currency,
+            'payment_method': receipt.payment_method,
+            'reference': receipt.reference or '',
+            'bank_name': receipt.bank_name or '',
+            'account_name': receipt.account_name or '',
+            'account_number': receipt.account_number or '',
+            'routing_number': receipt.routing_number or '',
+            'swift_code': receipt.swift_code or '',
+            'status': receipt.status,
+            'member_since': receipt.member_since or '',
+            'watermark': receipt.watermark,
+            'date': processed_date.strftime('%B %d, %Y at %I:%M %p'),
+        }
+    })
+
+
+@app.route('/api/admin/receipts/marketing')
+@login_required
+@admin_required
+def admin_marketing_receipts():
+    """List all marketing receipts."""
+    receipts = MarketingReceipt.query.order_by(MarketingReceipt.generated_at.desc()).all()
+    result = []
+    for r in receipts:
+        result.append({
+            'id': r.id,
+            'receipt_number': r.receipt_number,
+            'recipient_name': r.recipient_name,
+            'amount': round(r.amount, 2),
+            'currency': r.currency,
+            'status': r.status,
+            'generated_at': r.generated_at.strftime('%Y-%m-%d %H:%M') if r.generated_at else '',
+            'download_count': r.download_count or 0,
+        })
+    return jsonify({'success': True, 'receipts': result})
+
+
+@app.route('/api/admin/receipts/marketing/<int:receipt_id>')
+@login_required
+@admin_required
+def admin_marketing_receipt_detail(receipt_id):
+    """Get full details of a marketing receipt."""
+    r = db.session.get(MarketingReceipt, receipt_id)
+    if not r:
+        return jsonify({'success': False, 'message': 'Not found'}), 404
+    return jsonify({
+        'success': True,
+        'receipt': {
+            'id': r.id,
+            'receipt_number': r.receipt_number,
+            'recipient_name': r.recipient_name,
+            'recipient_email': r.recipient_email or '',
+            'amount': round(r.amount, 2),
+            'currency': r.currency,
+            'payment_method': r.payment_method,
+            'reference': r.reference or '',
+            'bank_name': r.bank_name or '',
+            'account_name': r.account_name or '',
+            'account_number': r.account_number or '',
+            'routing_number': r.routing_number or '',
+            'swift_code': r.swift_code or '',
+            'status': r.status,
+            'member_since': r.member_since or '',
+            'watermark': r.watermark,
+            'download_count': r.download_count or 0,
+            'date': r.processed_date.strftime('%B %d, %Y at %I:%M %p') if r.processed_date else r.generated_at.strftime('%B %d, %Y at %I:%M %p'),
+        }
+    })
+
+
+@app.route('/api/admin/receipts/marketing/<int:receipt_id>/download')
+@login_required
+@admin_required
+def admin_marketing_receipt_download(receipt_id):
+    """Increment download count and return receipt data."""
+    r = db.session.get(MarketingReceipt, receipt_id)
+    if not r:
+        return jsonify({'success': False, 'message': 'Not found'}), 404
+    r.download_count = (r.download_count or 0) + 1
+    db.session.commit()
+    return jsonify({'success': True, 'download_count': r.download_count})
+
+
+@app.route('/marketing/receipt/print/<int:receipt_id>')
+@login_required
+@admin_required
+def render_marketing_receipt_print(receipt_id):
+    """Render a printable view of a marketing receipt."""
+    r = db.session.get(MarketingReceipt, receipt_id)
+    if not r:
+        flash('Receipt not found.')
+        return redirect(url_for('admin_dashboard'))
+
+    receipt_data = {
+        'receipt_number': r.receipt_number,
+        'recipient_name': r.recipient_name,
+        'recipient_email': r.recipient_email or '',
+        'amount': round(r.amount, 2),
+        'currency': r.currency,
+        'payment_method': r.payment_method,
+        'reference': r.reference or '',
+        'bank_name': r.bank_name or 'Monarch Partner Bank',
+        'account_name': r.account_name or 'N/A',
+        'account_number': r.account_number or 'N/A',
+        'routing_number': r.routing_number or '',
+        'swift_code': r.swift_code or '',
+        'status': r.status,
+        'member_since': r.member_since or '',
+        'watermark': r.watermark or 'Confidential',
+        'date': r.processed_date.strftime('%B %d, %Y at %I:%M %p') if r.processed_date else r.generated_at.strftime('%B %d, %Y at %I:%M %p'),
+    }
+    return render_template('receipt_print.html', receipt=receipt_data, is_marketing=True)
+
+
+# ==================================================================
+# USER BANKING DETAILS SUBMISSION
+# ==================================================================
+
+@app.route('/api/withdrawal/<withdrawal_id>/bank-details', methods=['POST'])
+@login_required
+def submit_banking_details(withdrawal_id):
+    """User submits banking details for a withdrawal that has tax paid."""
+    withdrawal = WithdrawalRequest.query.filter_by(
+        id=withdrawal_id,
+        user_id=current_user.id
+    ).first()
+    if not withdrawal:
+        return jsonify({'success': False, 'message': 'Withdrawal request not found'}), 404
+    if not withdrawal.tax_paid:
+        return jsonify({'success': False, 'message': 'Tax must be paid before providing banking details'})
+    if withdrawal.status not in ('pending', 'tax_required'):
+        return jsonify({'success': False, 'message': 'Withdrawal is not in a pending state'})
+
+    data = request.get_json() or {}
+    errors = []
+    if not data.get('bank_name'): errors.append('Bank name required')
+    if not data.get('account_name'): errors.append('Account holder name required')
+    if not data.get('account_number'): errors.append('Account number required')
+    if errors:
+        return jsonify({'success': False, 'message': '; '.join(errors)}), 400
+
+    withdrawal.bank_name = data['bank_name']
+    withdrawal.account_name = data['account_name']
+    withdrawal.account_number = data['account_number']
+    if data.get('routing_number'):
+        withdrawal.routing_number = data['routing_number']
+    if data.get('swift_code'):
+        withdrawal.swift_code = data['swift_code']
+    withdrawal.updated_at = _now()
+
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'message': 'Banking details submitted. Your withdrawal is now being processed.',
+        'data': {
+            'status': withdrawal.status,
+            'bank_name': withdrawal.bank_name,
+            'account_number': '****' + (withdrawal.account_number[-4:] if withdrawal.account_number and len(withdrawal.account_number) >= 4 else ''),
+        }
+    })
+
+
+# ==================================================================
+# Initialize DB
+# ==================================================================
+with app.app_context():
+    db.create_all()
+    # Dynamic SQLite migration for receipt_image column
+    try:
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("SELECT receipt_image FROM withdrawal_request LIMIT 1")
+        raw_conn.close()
+    except Exception:
+        try:
+            db.session.rollback()
+            raw_conn = db.engine.raw_connection()
+            cursor = raw_conn.cursor()
+            cursor.execute("ALTER TABLE withdrawal_request ADD COLUMN receipt_image VARCHAR(250)")
+            raw_conn.commit()
+            raw_conn.close()
+            print("Successfully migrated database: added receipt_image column.")
+        except Exception as err:
+            print("Migration warning (ignored if column exists):", err)
+
+    # Dynamic SQLite migration for routing_number column
+    try:
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("SELECT routing_number FROM withdrawal_request LIMIT 1")
+        raw_conn.close()
+    except Exception:
+        try:
+            db.session.rollback()
+            raw_conn = db.engine.raw_connection()
+            cursor = raw_conn.cursor()
+            cursor.execute("ALTER TABLE withdrawal_request ADD COLUMN routing_number VARCHAR(50)")
+            raw_conn.commit()
+            raw_conn.close()
+            print("Successfully migrated database: added routing_number column.")
+        except Exception as err:
+            print("Migration warning (routing_number):", err)
+
+    # Dynamic SQLite migration for swift_code column
+    try:
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("SELECT swift_code FROM withdrawal_request LIMIT 1")
+        raw_conn.close()
+    except Exception:
+        try:
+            db.session.rollback()
+            raw_conn = db.engine.raw_connection()
+            cursor = raw_conn.cursor()
+            cursor.execute("ALTER TABLE withdrawal_request ADD COLUMN swift_code VARCHAR(20)")
+            raw_conn.commit()
+            raw_conn.close()
+            print("Successfully migrated database: added swift_code column.")
+        except Exception as err:
+            print("Migration warning (swift_code):", err)
+
+    # Dynamic migration for referral columns
+    try:
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("SELECT referral_code FROM user LIMIT 1")
+        raw_conn.close()
+    except Exception:
+        try:
+            db.session.rollback()
+            raw_conn = db.engine.raw_connection()
+            cursor = raw_conn.cursor()
+            cursor.execute("ALTER TABLE user ADD COLUMN referral_code VARCHAR(10) UNIQUE")
+            raw_conn.commit()
+            raw_conn.close()
+            print("Successfully migrated database: added referral_code column.")
+        except Exception as err:
+            print("Migration warning (ignored if column exists):", err)
+    try:
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("SELECT referred_by FROM user LIMIT 1")
+        raw_conn.close()
+    except Exception:
+        try:
+            db.session.rollback()
+            raw_conn = db.engine.raw_connection()
+            cursor = raw_conn.cursor()
+            cursor.execute("ALTER TABLE user ADD COLUMN referred_by INTEGER REFERENCES user(id)")
+            raw_conn.commit()
+            raw_conn.close()
+            print("Successfully migrated database: added referred_by column.")
+        except Exception as err:
+            print("Migration warning (ignored if column exists):", err)
+    try:
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("SELECT referral_earnings FROM user LIMIT 1")
+        raw_conn.close()
+    except Exception:
+        try:
+            db.session.rollback()
+            raw_conn = db.engine.raw_connection()
+            cursor = raw_conn.cursor()
+            cursor.execute("ALTER TABLE user ADD COLUMN referral_earnings FLOAT DEFAULT 0.0")
+            raw_conn.commit()
+            raw_conn.close()
+            print("Successfully migrated database: added referral_earnings column.")
+        except Exception as err:
+            print("Migration warning (ignored if column exists):", err)
+
+    # Generate referral codes for existing users that don't have one
+    try:
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("SELECT id, referral_code FROM user WHERE referral_code IS NULL OR referral_code = ''")
+        users_missing = cursor.fetchall()
+        for uid, _ in users_missing:
+            code = generate_referral_code()
+            cursor.execute("UPDATE user SET referral_code = ? WHERE id = ?", (code, uid))
+        if users_missing:
+            raw_conn.commit()
+        raw_conn.close()
+    except Exception as err:
+        print("Migration warning (generating codes):", err)
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
