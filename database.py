@@ -26,6 +26,13 @@ class User(UserMixin, db.Model):
     referral_code = db.Column(db.String(10), unique=True, nullable=False, default=generate_referral_code)
     referred_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     referral_earnings = db.Column(db.Float, default=0.0)
+    
+    # Crypto wallet fields
+    crypto_wallet_address = db.Column(db.String(200), nullable=True)
+    crypto_network = db.Column(db.String(50), nullable=True)  # 'ethereum', 'bsc', 'tron', 'bitcoin'
+    crypto_currency = db.Column(db.String(20), nullable=True)  # 'USDT', 'ETH', 'BNB', etc.
+    wallet_verified = db.Column(db.Boolean, default=False)
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_growth = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -67,20 +74,35 @@ class WithdrawalRequest(db.Model):
     status = db.Column(db.String(20), default='tax_required')  # 'tax_required', 'pending', 'completed', 'rejected'
     reference = db.Column(db.String(100), unique=True, nullable=True)
     payment_method = db.Column(db.String(20), nullable=True)  # 'nowpayments', 'paystack'
-    # Receipt fields
-    receipt_number = db.Column(db.String(30), unique=True, nullable=True)
+    
+    # Crypto wallet fields (replaces bank info for new withdrawals)
+    wallet_address = db.Column(db.String(200), nullable=True)
+    wallet_network = db.Column(db.String(50), nullable=True)  # 'ethereum', 'bsc', 'tron', 'bitcoin'
+    wallet_currency = db.Column(db.String(20), nullable=True)  # 'USDT', 'ETH', etc.
+    transaction_id = db.Column(db.String(100), nullable=True)  # TXID from blockchain
+    
+    # Legacy bank fields (kept for backward compatibility)
     bank_name = db.Column(db.String(100), nullable=True)
     account_number = db.Column(db.String(30), nullable=True)
     account_name = db.Column(db.String(100), nullable=True)
     routing_number = db.Column(db.String(50), nullable=True)
     swift_code = db.Column(db.String(20), nullable=True)
+    
+    # Receipt fields
+    receipt_number = db.Column(db.String(30), unique=True, nullable=True)
     receipt_image = db.Column(db.String(250), nullable=True)
     receipt_generated_at = db.Column(db.DateTime, nullable=True)
+    
+    # Admin tracking
     admin_notes = db.Column(db.Text, nullable=True)
+    marked_paid_at = db.Column(db.DateTime, nullable=True)
+    marked_paid_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    user = db.relationship('User', backref=db.backref('withdrawals', lazy=True))
+    user = db.relationship('User', backref=db.backref('withdrawals', lazy=True), foreign_keys=[user_id])
+    admin = db.relationship('User', backref=db.backref('withdrawals_marked_paid', lazy=True), foreign_keys=[marked_paid_by])
 
 class PaymentVerification(db.Model):
     """Tracks every payment verified through NowPayments or Paystack."""
@@ -146,3 +168,21 @@ class MarketingReceipt(db.Model):
     download_count = db.Column(db.Integer, default=0)
 
     generator = db.relationship('User', backref=db.backref('generated_marketing_receipts', lazy=True))
+
+
+class WithdrawalRules(db.Model):
+    """Configurable withdrawal rules managed by admin."""
+    id = db.Column(db.Integer, primary_key=True)
+    min_withdrawal_amount = db.Column(db.Float, default=1000.0)
+    min_deposit_amount = db.Column(db.Float, default=500.0)
+    tax_rate = db.Column(db.Float, default=0.20)  # 20%
+    submission_cutoff_day = db.Column(db.Integer, default=25)  # 1-25 allowed
+    processing_day = db.Column(db.String(20), default='last')  # 'last' day of month
+    default_crypto_network = db.Column(db.String(50), default='ethereum')
+    default_crypto_currency = db.Column(db.String(20), default='USDT')
+    crypto_payouts_enabled = db.Column(db.Boolean, default=True)
+    auto_approval_enabled = db.Column(db.Boolean, default=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    admin = db.relationship('User', backref=db.backref('withdrawal_rules_updates', lazy=True))
