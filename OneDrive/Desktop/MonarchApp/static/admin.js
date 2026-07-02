@@ -92,8 +92,9 @@ async function loadWithdrawals() {
 
                 if (w.status === 'pending' || w.status === 'tax_required') {
                     actionsHtml = `
-                        <button onclick="openDetailModal('${w.id}')" class="btn-sm btn-view">📋 View</button>
-                        <button onclick="openReceiptModal('${w.id}', ${w.amount || 0}, ${w.tax_amount || 0})" class="btn-sm btn-approve">Approve</button>
+                    <button onclick="openDetailModal('${w.id}')" class="btn-sm btn-view">📋 View</button>
+                        <button onclick="openMarkPaidModal('${w.id}')" class="btn-sm btn-approve">💸 Send Payout</button>
+                        <button onclick="openReceiptModal('${w.id}', ${w.amount || 0}, ${w.tax_amount || 0})" class="btn-sm btn-view">📄 Receipt</button>
                         <button onclick="openRejectModal('${w.id}')" class="btn-sm btn-reject">Reject</button>
                     `;
                 } else if (w.status === 'completed' && w.receipt_number) {
@@ -243,6 +244,76 @@ async function quickApproveWithdrawal(id) {
 
 function closeDetailModal() {
     document.getElementById('detailModal').style.display = 'none';
+}
+
+// ---- Mark as Paid Modal ----
+async function openMarkPaidModal(id) {
+    // Fetch withdrawal from cache or API
+    let withdrawal = _allWithdrawalsCache[id];
+    if (!withdrawal) {
+        try {
+            const resp = await fetch(`/api/admin/withdrawals`);
+            const data = await resp.json();
+            if (data.success && data.withdrawals) {
+                data.withdrawals.forEach(w => { _allWithdrawalsCache[w.id] = w; });
+                withdrawal = _allWithdrawalsCache[id];
+            }
+        } catch (e) {
+            alert('Failed to load withdrawal details.');
+            return;
+        }
+    }
+    if (!withdrawal) { alert('Withdrawal not found'); return; }
+
+    const netAmount = (withdrawal.amount || 0) - (withdrawal.tax_amount || 0);
+    
+    document.getElementById('markPaidId').value = id;
+    document.getElementById('markPaidUser').textContent = withdrawal.username || 'Unknown';
+    document.getElementById('markPaidEmail').textContent = withdrawal.email || '';
+    document.getElementById('markPaidAmount').textContent = `$${Number(withdrawal.amount || 0).toFixed(2)}`;
+    document.getElementById('markPaidTax').textContent = `$${Number(withdrawal.tax_amount || 0).toFixed(2)}`;
+    document.getElementById('markPaidNet').textContent = `$${netAmount.toFixed(2)}`;
+    document.getElementById('markPaidWallet').textContent = withdrawal.crypto_wallet_address || 'Not provided';
+    document.getElementById('markPaidNetwork').textContent = withdrawal.crypto_network || 'N/A';
+    document.getElementById('markPaidTxid').value = '';
+    
+    document.getElementById('markPaidModal').style.display = 'flex';
+}
+
+function closeMarkPaidModal() {
+    document.getElementById('markPaidModal').style.display = 'none';
+}
+
+async function confirmMarkPaid() {
+    const id = document.getElementById('markPaidId').value;
+    const txid = document.getElementById('markPaidTxid').value.trim();
+    
+    if (!confirm('Mark this withdrawal as paid? This action cannot be undone.')) return;
+    
+    const btn = document.querySelector('#markPaidModal .btn-gold');
+    if (btn) { btn.disabled = true; btn.textContent = 'Processing...'; }
+    
+    try {
+        const resp = await fetch(`/api/admin/withdrawal/${id}/mark-paid`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ txid: txid || undefined })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            _allWithdrawalsCache = {};
+            closeMarkPaidModal();
+            loadStats();
+            loadWithdrawals();
+            alert(`✅ Payout marked as completed!\nReceipt: ${data.data.receipt_number}\nNet payout: $${Number(data.data.net_payout).toFixed(2)}`);
+        } else {
+            alert('❌ Failed: ' + data.message);
+        }
+    } catch (e) {
+        alert('❌ Network error.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Confirm & Mark Completed'; }
+    }
 }
 
 // ---- Reject Withdrawal ----

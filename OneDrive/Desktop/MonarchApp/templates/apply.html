@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+
+{% block title %}Apply for Invitation – Monarch Wealth Group{% endblock %}
+
+{% block content %}
+<div style="min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background: var(--bg-deep); padding: 2rem 1rem; position: relative;">
+    <!-- Background Canvas Particles -->
+    <canvas id="particleCanvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;"></canvas>
+
+    <div class="apply-container" style="background: rgba(20, 25, 38, 0.7); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); padding: 3rem 2.5rem; border-radius: 20px; border: 1px solid var(--border-gold); max-width: 680px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.6); position: relative; z-index: 2; margin-top: 1rem; margin-bottom: 2rem;">
+        
+        <!-- Header -->
+        <div style="text-align: center; margin-bottom: 2.5rem;">
+            <a href="/" style="display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none; margin-bottom: 1.5rem;">
+                <svg class="brand-crest" width="32" height="32" viewBox="0 0 28 28" fill="none">
+                    <rect x="2" y="12" width="24" height="4" rx="1" fill="#C8A85E"/>
+                    <path d="M4 16 L14 4 L24 16" stroke="#C8A85E" stroke-width="2" stroke-linejoin="round"/>
+                    <path d="M8 20 L14 10 L20 20" stroke="#C8A85E" stroke-width="1.5" stroke-linejoin="round"/>
+                    <circle cx="14" cy="8" r="2" fill="#C8A85E"/>
+                </svg>
+                <span style="font-size: 1.8rem; font-weight: 500; font-family: var(--font-serif); color: var(--text);">Monarch<span style="color: var(--gold);">Wealth</span></span>
+            </a>
+            <h2 style="font-family: var(--font-serif); font-size: 1.8rem; color: var(--text); margin-bottom: 0.5rem; letter-spacing: 0.5px;">APPLY FOR INVITATION</h2>
+            <p style="color: var(--text-dim); font-size: 0.88rem; max-width: 460px; margin: 0 auto;">Monarch Wealth Group is an exclusive private registry. Access is currently limited to approved applicants only.</p>
+        </div>
+
+        <!-- FOMO Counter Section -->
+        <div style="background: rgba(200, 168, 94, 0.05); border: 1px solid rgba(200, 168, 94, 0.15); border-radius: 12px; padding: 1rem; margin-bottom: 2rem; display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap; gap: 1rem; text-align: center;">
+            <div>
+                <div style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 1px;">Monthly Allocation</div>
+                <div style="font-size: 1.25rem; font-weight: 700; color: var(--gold); font-family: var(--font-serif); margin-top: 0.2rem;" id="spotsLeftBadge">🔥 {{ spots_left }} Spots Left</div>
+            </div>
+            <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.08);" class="divider-v"></div>
+            <div>
+                <div style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 1px;">Current Queue</div>
+                <div style="font-size: 1.2rem; font-weight: 600; color: var(--text); margin-top: 0.2rem;" id="pendingCountBadge">⚡ {{ pending_count }} Waiting</div>
+            </div>
+        </div>
+
+        <!-- Notification Banner -->
+        <div id="notifyMessage" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #F87171; padding: 1rem; border-radius: 10px; margin-bottom: 1.5rem; font-size: 0.85rem; text-align: center;"></div>
+
+        <!-- Form -->
+        <form id="applyForm" onsubmit="submitApplication(event)" style="display: flex; flex-direction: column; gap: 1.8rem;">
+            
+            <!-- Section 1: Personal Information -->
+            <div>
+                <h3 style="font-family: var(--font-serif); font-size: 1.15rem; color: var(--gold); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem; margin-bottom: 1rem; letter-spacing: 0.5px;">1. Personal Profile</h3>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;" class="form-grid-2">
+                    <div>
+                        <label for="fullName" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 0.4rem;">Full Name *</label>
+                        <input type="text" id="fullName" required placeholder="e.g. Robert Sterling" 
+                            style="width: 100%; padding: 0.75rem; background: rgba(10, 13, 26, 0.6); border: 1px solid var(--border-gold); border-radius: 8px; color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.3s;"
+                            onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border-gold)'">
+                    </div>
+                    <div>
+                        <label for="email" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 0.4rem;">Email Address *</label>
+                        <input type="email" id="email" required placeholder="e.g. sterling@heritage.com" 
+                            style="width: 100%; padding: 0.75rem; background: rgba(10, 13, 26, 0.6); border: 1px solid var(--border-gold); border-radius: 8px; color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.3s;"
+                            onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border-gold)'">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;" class="form-grid-2">
+                    <div>
+                        <label for="phone" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 0.4rem;">Phone Number</label>
+                        <input type="tel" id="phone" placeholder="e.g. +1 (555) 019-2834" 
+                            style="width: 100%; padding: 0.75rem; background: rgba(10, 13, 26, 0.6); border: 1px solid var(--border-gold); border-radius: 8px; color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.3s;"
+                            onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border-gold)'">
+                    </div>
+                    <div>
+                        <label for="country" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 0.4rem;">Country of Residence *</label>
+                        <select id="country" required 
+                            style="width: 100%; padding: 0.75rem; background: rgba(10, 13, 26, 0.9); border: 1px solid var(--border-gold); border-radius: 8px; color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.3s; cursor: pointer;"
+                            onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border-gold)'">
+                            <option value="United States">United States</option>
+                            <option value="United Kingdom">United Kingdom</option>
+                            <option value="Canada">Canada</option>
+                            <option value="Germany">Germany</option>
+                            <option value="Switzerland">Switzerland</option>
+                            <option value="Singapore">Singapore</option>
+                            <option value="Australia">Australia</option>
+                            <option value="South Africa">South Africa</option>
+                            <option value="Nigeria">Nigeria</option>
+                            <option value="United Arab Emirates">United Arab Emirates</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 2: Financial Capital -->
+            <div>
+                <h3 style="font-family: var(--font-serif); font-size: 1.15rem; color: var(--gold); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem; margin-bottom: 1rem; letter-spacing: 0.5px;">2. Financial Allocation</h3>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;" class="form-grid-2">
+                    <div>
+                        <label for="investmentAmount" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 0.4rem;">Planned Investment ($ USD) *</label>
+                        <div style="position: relative;">
+                            <span style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--text-dim); font-size: 0.9rem;">$</span>
+                            <input type="number" id="investmentAmount" required min="500" placeholder="5,000" 
+                                style="width: 100%; padding: 0.75rem 0.75rem 0.75rem 1.6rem; background: rgba(10, 13, 26, 0.6); border: 1px solid var(--border-gold); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.3s;"
+                                onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border-gold)'">
+                        </div>
+                        <small style="display: block; color: var(--text-faint); font-size: 0.65rem; margin-top: 0.3rem;">Minimum initial placement of $500 is required.</small>
+                    </div>
+                    <div>
+                        <label for="investmentGoal" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 0.4rem;">Primary Portfolio Goal</label>
+                        <select id="investmentGoal" 
+                            style="width: 100%; padding: 0.75rem; background: rgba(10, 13, 26, 0.9); border: 1px solid var(--border-gold); border-radius: 8px; color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.3s; cursor: pointer;"
+                            onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border-gold)'">
+                            <option value="Wealth Building">Wealth Building & Growth</option>
+                            <option value="Capital Preservation">Asset Capital Preservation</option>
+                            <option value="Retirement Planning">Retirement Reserve Accumulation</option>
+                            <option value="Legacy Creation">Legacy & Generational Transfer</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-top: 1rem;">
+                    <label for="sourceOfFunds" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 0.4rem;">Declared Source of Capital *</label>
+                    <select id="sourceOfFunds" required
+                        style="width: 100%; padding: 0.75rem; background: rgba(10, 13, 26, 0.9); border: 1px solid var(--border-gold); border-radius: 8px; color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.3s; cursor: pointer;"
+                        onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border-gold)'">
+                        <option value="Employment Income">Employment Compensation / Wages</option>
+                        <option value="Business Profits">Equity Dividends / Business Profits</option>
+                        <option value="Inheritance/Gift">Inheritance / Generational Capital Transfer</option>
+                        <option value="Investment Returns">Liquidation of Real Estate or Stocks</option>
+                        <option value="Other">Other Institutional Holdings</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Section 3: Referral -->
+            <div>
+                <h3 style="font-family: var(--font-serif); font-size: 1.15rem; color: var(--gold); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem; margin-bottom: 1rem; letter-spacing: 0.5px;">3. Sponsorship (Optional)</h3>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;" class="form-grid-2">
+                    <div>
+                        <label for="referredBy" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 0.4rem;">Sponsor / Referred By</label>
+                        <input type="text" id="referredBy" placeholder="e.g. Sarah Chen" 
+                            style="width: 100%; padding: 0.75rem; background: rgba(10, 13, 26, 0.6); border: 1px solid var(--border-gold); border-radius: 8px; color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.3s;"
+                            onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border-gold)'">
+                    </div>
+                    <div>
+                        <label for="relationship" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 0.4rem;">Sponsor Relationship</label>
+                        <select id="relationship" 
+                            style="width: 100%; padding: 0.75rem; background: rgba(10, 13, 26, 0.9); border: 1px solid var(--border-gold); border-radius: 8px; color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.3s; cursor: pointer;"
+                            onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border-gold)'">
+                            <option value="">Select connection...</option>
+                            <option value="Friend">Personal Associate / Friend</option>
+                            <option value="Family Member">Kinship / Family Member</option>
+                            <option value="Colleague">Commercial / Business Associate</option>
+                            <option value="Professional Advisor">Fiduciary / Professional Advisor</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-top: 1rem;">
+                    <label for="additionalNotes" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 0.4rem;">Statement of Investment Intent</label>
+                    <textarea id="additionalNotes" rows="3" placeholder="Briefly describe what you seek to achieve with Monarch Wealth..." 
+                        style="width: 100%; padding: 0.75rem; background: rgba(10, 13, 26, 0.6); border: 1px solid var(--border-gold); border-radius: 8px; color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.3s; resize: vertical; font-family: var(--font-sans);"
+                        onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border-gold)'"></textarea>
+                </div>
+            </div>
+
+            <!-- Terms -->
+            <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+                <label style="display: flex; align-items: flex-start; gap: 0.6rem; font-size: 0.78rem; color: var(--text-dim); cursor: pointer;">
+                    <input type="checkbox" required style="margin-top: 0.2rem; accent-color: var(--gold);">
+                    <span>I understand and declare that capital markets involve financial risk, and all investments should be conducted with risk awareness.</span>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: 0.6rem; font-size: 0.78rem; color: var(--text-dim); cursor: pointer;">
+                    <input type="checkbox" required style="margin-top: 0.2rem; accent-color: var(--gold);">
+                    <span>I certify that I am at least 18 years of age and meet the capacity requirements in my jurisdiction.</span>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: 0.6rem; font-size: 0.78rem; color: var(--text-dim); cursor: pointer;">
+                    <input type="checkbox" required style="margin-top: 0.2rem; accent-color: var(--gold);">
+                    <span>I request review of my application details under the guidelines of the Monarch Wealth charter.</span>
+                </label>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="submit" id="btnSubmit" class="button-hover"
+                style="margin-top: 0.5rem; width: 100%; padding: 1rem; background: var(--gold); color: var(--bg-deep); border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 700; cursor: pointer; transition: all 0.3s; box-shadow: 0 4px 15px rgba(200, 168, 94, 0.15); letter-spacing: 0.5px;">
+                Submit Application to Registrar
+            </button>
+        </form>
+
+        <div style="text-align: center; margin-top: 2rem; font-size: 0.82rem; color: var(--text-dim);">
+            Have an invitation code? <a href="{{ url_for('register') }}" style="color: var(--gold); text-decoration: none; font-weight: 600; transition: color 0.2s;" onmouseover="this.style.color='#d4b76a'" onmouseout="this.style.color='var(--gold)'">Register Directly</a>
+        </div>
+        
+        <div style="text-align: center; margin-top: 1rem;">
+            <a href="/" style="color: var(--text-faint); text-decoration: none; font-size: 0.75rem; transition: color 0.2s;" onmouseover="this.style.color='var(--text-dim)'" onmouseout="this.style.color='var(--text-faint)'">← Return to Portal</a>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Canvas Particles System
+const canvas = document.getElementById('particleCanvas');
+if (canvas) {
+    const ctx = canvas.getContext('2d');
+    
+    // Set size
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // Create particles
+    const particles = [];
+    const particleCount = 80;
+    for (let i = 0; i < particleCount; i++) {
+        particles.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: Math.random() * 2 + 0.5,
+            speedX: (Math.random() - 0.5) * 0.2,
+            speedY: (Math.random() - 0.5) * 0.2 - 0.1, // Float slightly up
+            opacity: Math.random() * 0.4 + 0.1
+        });
+    }
+
+    function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        particles.forEach(p => {
+            p.x += p.speedX;
+            p.y += p.speedY;
+
+            if (p.x < 0) p.x = canvas.width;
+            if (p.x > canvas.width) p.x = 0;
+            if (p.y < 0) p.y = canvas.height;
+            if (p.y > canvas.height) p.y = 0;
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(200, 168, 94, ${p.opacity})`;
+            ctx.fill();
+        });
+
+        requestAnimationFrame(animate);
+    }
+    animate();
+}
+
+// Form Submission
+async function submitApplication(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btnSubmit');
+    const notify = document.getElementById('notifyMessage');
+    
+    btn.disabled = true;
+    btn.textContent = 'Processing Credentials...';
+    notify.style.display = 'none';
+
+    const payload = {
+        full_name: document.getElementById('fullName').value,
+        email: document.getElementById('email').value,
+        phone: document.getElementById('phone').value,
+        country: document.getElementById('country').value,
+        investment_amount: parseFloat(document.getElementById('investmentAmount').value),
+        investment_goal: document.getElementById('investmentGoal').value,
+        source_of_funds: document.getElementById('sourceOfFunds').value,
+        referred_by: document.getElementById('referredBy').value,
+        relationship: document.getElementById('relationship').value,
+        additional_notes: document.getElementById('additionalNotes').value
+    };
+
+    try {
+        const response = await fetch('/api/apply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            // Redirect to status page
+            window.location.href = `/application-status?email=${encodeURIComponent(payload.email)}`;
+        } else {
+            notify.textContent = result.message || 'Verification failed. Please check inputs.';
+            notify.style.background = 'rgba(239, 68, 68, 0.15)';
+            notify.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+            notify.style.color = '#F87171';
+            notify.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = 'Submit Application to Registrar';
+        }
+    } catch (err) {
+        console.error(err);
+        notify.textContent = 'Network communication failure. Please check your connection and retry.';
+        notify.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Submit Application to Registrar';
+    }
+}
+</script>
+
+<style>
+/* Micro animations and custom classes */
+.button-hover {
+    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.button-hover:hover {
+    transform: scale(1.015);
+    background: #d4b76a !important;
+    box-shadow: 0 8px 25px rgba(200, 168, 94, 0.3) !important;
+}
+.apply-container select option {
+    background: var(--bg-deep);
+    color: var(--text);
+}
+@media (max-width: 580px) {
+    .form-grid-2 {
+        grid-template-columns: 1fr !important;
+        gap: 1.2rem !important;
+    }
+    .apply-container {
+        padding: 2rem 1.5rem !important;
+    }
+}
+</style>
+{% endblock %}

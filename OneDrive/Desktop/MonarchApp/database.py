@@ -4,7 +4,7 @@ import random
 import string
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
-from datetime import datetime
+from datetime import datetime, timedelta
 
 db = SQLAlchemy()
 
@@ -13,6 +13,15 @@ def generate_referral_code():
     while True:
         code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
         if not User.query.filter_by(referral_code=code).first():
+            return code
+
+def generate_invitation_code():
+    """Generate a unique invitation code like MWG-2026-XXXX."""
+    year = datetime.utcnow().year
+    while True:
+        rand = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+        code = f'MWG-{year}-{rand}'
+        if not WaitingList.query.filter_by(invitation_code=code).first():
             return code
 
 class User(UserMixin, db.Model):
@@ -26,6 +35,15 @@ class User(UserMixin, db.Model):
     referral_code = db.Column(db.String(10), unique=True, nullable=False, default=generate_referral_code)
     referred_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     referral_earnings = db.Column(db.Float, default=0.0)
+    # Crypto wallet for payouts
+    crypto_wallet_address = db.Column(db.String(200), nullable=True)
+    crypto_network = db.Column(db.String(50), default='Ethereum (ERC-20)')
+    crypto_currency = db.Column(db.String(10), default='USDT')
+    # Waiting list / invitation fields
+    waiting_list_id = db.Column(db.Integer, db.ForeignKey('waiting_list.id'), nullable=True)
+    invitation_code = db.Column(db.String(50), unique=True, nullable=True)
+    invitation_expires_at = db.Column(db.DateTime, nullable=True)
+    is_approved = db.Column(db.Boolean, default=True)  # True by default for backward compat
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_growth = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -67,6 +85,16 @@ class WithdrawalRequest(db.Model):
     status = db.Column(db.String(20), default='tax_required')  # 'tax_required', 'pending', 'completed', 'rejected'
     reference = db.Column(db.String(100), unique=True, nullable=True)
     payment_method = db.Column(db.String(20), nullable=True)  # 'nowpayments', 'paystack'
+    # Payment/settlement fields
+    payout_method = db.Column(db.String(20), default='bank_transfer')  # 'bank_transfer' or 'crypto'
+    # Crypto wallet for this specific withdrawal
+    crypto_wallet_address = db.Column(db.String(200), nullable=True)
+    crypto_network = db.Column(db.String(50), nullable=True)
+    crypto_currency = db.Column(db.String(10), default='USDT')
+    # Admin mark-as-paid fields
+    txid = db.Column(db.String(200), nullable=True)  # Transaction ID for actual sent crypto
+    marked_paid_at = db.Column(db.DateTime, nullable=True)
+    marked_paid_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     # Receipt fields
     receipt_number = db.Column(db.String(30), unique=True, nullable=True)
     bank_name = db.Column(db.String(100), nullable=True)
@@ -80,7 +108,8 @@ class WithdrawalRequest(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    user = db.relationship('User', backref=db.backref('withdrawals', lazy=True))
+    user = db.relationship('User', foreign_keys=[user_id], backref=db.backref('withdrawals', lazy=True))
+    marked_admin = db.relationship('User', foreign_keys=[marked_paid_by], backref=db.backref('marked_withdrawals', lazy='dynamic'))
 
 class PaymentVerification(db.Model):
     """Tracks every payment verified through NowPayments or Paystack."""
@@ -146,3 +175,43 @@ class MarketingReceipt(db.Model):
     download_count = db.Column(db.Integer, default=0)
 
     generator = db.relationship('User', backref=db.backref('generated_marketing_receipts', lazy=True))
+
+
+class WaitingList(db.Model):
+    """Waiting list / application tracking for new members."""
+    __tablename__ = 'waiting_list'
+    id = db.Column(db.Integer, primary_key=True)
+    full_name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), nullable=False)
+    phone = db.Column(db.String(50), nullable=True)
+    country = db.Column(db.String(50), nullable=True)
+    investment_amount = db.Column(db.Float, nullable=True)
+    investment_goal = db.Column(db.String(50), nullable=True)
+    source_of_funds = db.Column(db.String(50), nullable=True)
+    referred_by = db.Column(db.String(100), nullable=True)
+    relationship = db.Column(db.String(50), nullable=True)
+    additional_notes = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(20), default='pending')  # 'pending', 'approved', 'rejected'
+    rejection_reason = db.Column(db.Text, nullable=True)
+    invitation_code = db.Column(db.String(50), unique=True, nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+    rejected_at = db.Column(db.DateTime, nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=True)  # 7 days after approval
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    reviewer = db.relationship('User', foreign_keys=[reviewed_by])
+
+
+class ApplicationHistory(db.Model):
+    """Audit log for waiting list application actions."""
+    __tablename__ = 'application_history'
+    id = db.Column(db.Integer, primary_key=True)
+    waiting_list_id = db.Column(db.Integer, db.ForeignKey('waiting_list.id'), nullable=False)
+    action = db.Column(db.String(20), nullable=False)  # 'submitted', 'approved', 'rejected', 'expired'
+    notes = db.Column(db.Text, nullable=True)
+    performed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    application = db.relationship('WaitingList', backref=db.backref('history', lazy='dynamic'))

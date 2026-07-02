@@ -475,15 +475,199 @@ function calculateBreakdown() {
     }
 }
 
+async function loadWithdrawalEligibility() {
+    try {
+        const resp = await fetch('/api/withdrawal/eligibility');
+        const data = await resp.json();
+        if (data.success && data.data) {
+            const e = data.data;
+            
+            // Show countdown
+            const countdownEl = document.getElementById('withdrawalCountdown');
+            if (countdownEl) {
+                countdownEl.style.display = 'block';
+                document.getElementById('countdownDisplay').textContent = `Processing on ${e.processing_date}`;
+                document.getElementById('cutOffDateDisplay').textContent = e.cut_off_date;
+                if (e.days_until_processing > 0) {
+                    document.getElementById('countdownSub').innerHTML = `Submit your request by <strong>${e.cut_off_date}</strong> &middot; <strong>${e.days_until_processing} days</strong> until processing`;
+                }
+            }
+            
+            // Show eligibility banner
+            const banner = document.getElementById('eligibilityBanner');
+            if (banner) {
+                banner.style.display = 'block';
+                if (!e.eligible) {
+                    banner.style.background = 'rgba(245,158,11,0.06)';
+                    banner.style.border = '1px solid rgba(245,158,11,0.15)';
+                    const needed = e.minimum_withdrawal - e.balance;
+                    banner.innerHTML = `
+                        <div style="display:flex; align-items:center; gap:0.5rem;">
+                            <span>❌</span>
+                            <div>
+                                <div style="font-size:0.75rem; color:var(--text);">Not eligible for withdrawal</div>
+                                <div style="font-size:0.68rem; color:var(--text-dim);">You need to deposit <strong style="color:var(--gold);">$${needed.toFixed(2)}</strong> more to reach the $${e.minimum_withdrawal.toFixed(2)} minimum.</div>
+                            </div>
+                        </div>
+                    `;
+                } else if (!e.wallet_provided) {
+                    banner.style.background = 'rgba(245,158,11,0.06)';
+                    banner.style.border = '1px solid rgba(245,158,11,0.15)';
+                    banner.innerHTML = `
+                        <div style="display:flex; align-items:center; gap:0.5rem;">
+                            <span>⚠️</span>
+                            <div>
+                                <div style="font-size:0.75rem; color:var(--text);">Wallet required</div>
+                                <div style="font-size:0.68rem; color:var(--text-dim);">Please save your crypto wallet address below before requesting a withdrawal.</div>
+                            </div>
+                        </div>
+                    `;
+                } else if (!e.within_submission_window) {
+                    banner.style.background = 'rgba(239,68,68,0.06)';
+                    banner.style.border = '1px solid rgba(239,68,68,0.15)';
+                    banner.innerHTML = `
+                        <div style="display:flex; align-items:center; gap:0.5rem;">
+                            <span>🔒</span>
+                            <div>
+                                <div style="font-size:0.75rem; color:var(--text);">Submissions closed</div>
+                                <div style="font-size:0.68rem; color:var(--text-dim);">Withdrawal submissions are closed until the 1st of next month. Cut-off is the 25th of each month.</div>
+                            </div>
+                        </div>
+                    `;
+                } else if (e.has_pending) {
+                    banner.style.background = 'rgba(59,130,246,0.06)';
+                    banner.style.border = '1px solid rgba(59,130,246,0.15)';
+                    banner.innerHTML = `
+                        <div style="display:flex; align-items:center; gap:0.5rem;">
+                            <span>⏳</span>
+                            <div>
+                                <div style="font-size:0.75rem; color:var(--text);">Pending withdrawal</div>
+                                <div style="font-size:0.68rem; color:var(--text-dim);">You already have a pending withdrawal request. Status: <strong>${e.pending_status}</strong></div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    banner.style.background = 'rgba(74,222,128,0.06)';
+                    banner.style.border = '1px solid rgba(74,222,128,0.15)';
+                    banner.innerHTML = `
+                        <div style="display:flex; align-items:center; gap:0.5rem;">
+                            <span>✅</span>
+                            <div>
+                                <div style="font-size:0.75rem; color:var(--text);">You are eligible!</div>
+                                <div style="font-size:0.68rem; color:var(--text-dim);">You can request up to <strong style="color:var(--gold);">$${e.balance.toFixed(2)}</strong>. Net payout after ${e.tax_rate}% tax: <strong style="color:var(--green);">$${e.net_payout.toFixed(2)}</strong></div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            // Load saved wallet
+            if (e.wallet_provided) {
+                const addrInput = document.getElementById('cryptoWalletAddress');
+                const netSelect = document.getElementById('cryptoWalletNetwork');
+                if (addrInput && e.wallet_address) addrInput.value = e.wallet_address;
+                if (netSelect && e.wallet_network) {
+                    for (let i = 0; i < netSelect.options.length; i++) {
+                        if (netSelect.options[i].value === e.wallet_network) {
+                            netSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+                const ws = document.getElementById('walletStatus');
+                if (ws) {
+                    ws.innerHTML = `<span style="color:var(--green);">✅ Wallet saved: ${e.wallet_address} (${e.wallet_network})</span>`;
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Error loading eligibility:', e);
+    }
+}
+
+async function saveCryptoWallet() {
+    const address = document.getElementById('cryptoWalletAddress').value.trim();
+    const network = document.getElementById('cryptoWalletNetwork').value;
+    
+    if (!address) {
+        document.getElementById('walletStatus').innerHTML = '<span style="color:#EF4444;">❌ Please enter a wallet address.</span>';
+        return;
+    }
+    
+    // Basic validation
+    const networkValidators = {
+        'Ethereum (ERC-20)': a => a.length === 42 && a.startsWith('0x'),
+        'BSC (BEP-20)': a => a.length === 42 && a.startsWith('0x'),
+        'Tron (TRC-20)': a => a.length === 34 && a.startsWith('T'),
+        'Bitcoin': a => a.length === 34 && '13bc'.includes(a[0]),
+        'Solana': a => a.length >= 32 && a.length <= 44,
+        'Polygon': a => a.length === 42 && a.startsWith('0x'),
+    };
+    
+    const validator = networkValidators[network];
+    if (validator && !validator(address)) {
+        document.getElementById('walletStatus').innerHTML = `<span style="color:#EF4444;">❌ Invalid address format for ${network}. Please check and try again.</span>`;
+        return;
+    }
+    
+    const btn = document.getElementById('btnSaveWallet');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+    
+    try {
+        const resp = await fetch('/api/user/wallet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                wallet_address: address,
+                wallet_network: network,
+                wallet_currency: 'USDT'
+            })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            const walletStatus = document.getElementById('walletStatus');
+            if (walletStatus) {
+                walletStatus.innerHTML = `<span style="color:var(--green);">✅ ${data.message}</span>`;
+            }
+            // Refresh eligibility
+            await loadWithdrawalEligibility();
+        } else {
+            document.getElementById('walletStatus').innerHTML = `<span style="color:#EF4444;">❌ ${data.message}</span>`;
+        }
+    } catch (e) {
+        document.getElementById('walletStatus').innerHTML = '<span style="color:#EF4444;">❌ Network error saving wallet.</span>';
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '💾 Save'; }
+    }
+}
+
 async function requestWithdrawal() {
     const amount = parseFloat(document.getElementById('withdrawAmount').value);
     if (amount > balance) {
         alert('❌ Insufficient balance');
         return;
     }
-    if (amount < 10) {
-        alert('❌ Minimum withdrawal is $10.00');
+    if (amount < 1000) {
+        alert('❌ Minimum withdrawal is $1,000.00');
         return;
+    }
+    
+    // Check eligibility via API
+    try {
+        const eligResp = await fetch('/api/withdrawal/eligibility');
+        const eligData = await eligResp.json();
+        if (eligData.success && eligData.data) {
+            const e = eligData.data;
+            if (!e.can_request) {
+                if (!e.eligible) alert('❌ You must have at least $1,000 to withdraw.');
+                else if (!e.wallet_provided) alert('❌ Please save your crypto wallet address first.');
+                else if (!e.within_submission_window) alert('❌ Withdrawal submissions are closed until the 1st of next month.');
+                else if (e.has_pending) alert('❌ You already have a pending withdrawal request.');
+                return;
+            }
+        }
+    } catch (e) {
+        // Fall through to server-side validation
     }
 
     const withdrawBtn = document.getElementById('withdrawBtn');
@@ -886,6 +1070,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         await loadPaystackRate();
         updateDashboard();
         await checkActiveWithdrawal();
+        await loadWithdrawalEligibility();
         await loadReceipts();
         await loadReferralInfo();
 

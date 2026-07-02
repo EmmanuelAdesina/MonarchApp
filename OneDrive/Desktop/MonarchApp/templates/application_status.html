@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block title %}Application Status – Monarch Wealth Group{% endblock %}
+
+{% block content %}
+<div style="min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background: var(--bg-deep); padding: 2rem 1rem; position: relative;">
+    <!-- Background Canvas Particles -->
+    <canvas id="particleCanvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;"></canvas>
+
+    <div class="status-container" style="background: rgba(20, 25, 38, 0.7); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); padding: 3rem 2.5rem; border-radius: 20px; border: 1px solid var(--border-gold); max-width: 580px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.6); position: relative; z-index: 2; margin-top: 1rem; margin-bottom: 2rem;">
+        
+        <!-- Header logo -->
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <a href="/" style="display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none;">
+                <svg class="brand-crest" width="28" height="28" viewBox="0 0 28 28" fill="none">
+                    <rect x="2" y="12" width="24" height="4" rx="1" fill="#C8A85E"/>
+                    <path d="M4 16 L14 4 L24 16" stroke="#C8A85E" stroke-width="2" stroke-linejoin="round"/>
+                    <path d="M8 20 L14 10 L20 20" stroke="#C8A85E" stroke-width="1.5" stroke-linejoin="round"/>
+                    <circle cx="14" cy="8" r="2" fill="#C8A85E"/>
+                </svg>
+                <span style="font-size: 1.5rem; font-weight: 500; font-family: var(--font-serif); color: var(--text);">Monarch<span style="color: var(--gold);">Wealth</span></span>
+            </a>
+        </div>
+
+        <!-- Initial Lookup State -->
+        <div id="lookupState" style="display: block;">
+            <h2 style="font-family: var(--font-serif); font-size: 1.5rem; color: var(--text); text-align: center; margin-bottom: 0.5rem; letter-spacing: 0.5px;">CHECK APPLICATION STATUS</h2>
+            <p style="color: var(--text-dim); font-size: 0.85rem; text-align: center; margin-bottom: 2rem;">Enter your registered email address to check your status on the private registry.</p>
+            
+            <div id="lookupError" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #F87171; padding: 0.8rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.8rem; text-align: center;"></div>
+            
+            <form onsubmit="lookupStatus(event)" style="display: flex; flex-direction: column; gap: 1.2rem;">
+                <div>
+                    <label for="lookupEmail" style="display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); margin-bottom: 0.5rem;">Registered Email</label>
+                    <input type="email" id="lookupEmail" required placeholder="e.g. sterling@heritage.com" value="{{ email or '' }}"
+                        style="width: 100%; padding: 0.8rem; background: rgba(10, 13, 26, 0.6); border: 1px solid var(--border-gold); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.3s;"
+                        onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border-gold)'">
+                </div>
+                <button type="submit" id="btnLookup" class="button-hover"
+                    style="width: 100%; padding: 0.9rem; background: var(--gold); color: var(--bg-deep); border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 700; cursor: pointer; transition: all 0.3s; letter-spacing: 0.5px;">
+                    Search Registry Records
+                </button>
+            </form>
+        </div>
+
+        <!-- Pending Review State -->
+        <div id="pendingState" style="display: none; text-align: center;">
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; animation: floatHourglass 2s ease-in-out infinite;">⏳</div>
+            <h2 style="font-family: var(--font-serif); font-size: 1.6rem; color: var(--text); margin-bottom: 0.5rem; letter-spacing: 0.5px;">APPLICATION UNDER REVIEW</h2>
+            <div style="display: inline-block; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2); color: #F59E0B; padding: 0.35rem 1rem; border-radius: 30px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1.5rem;">
+                Status: Pending Review
+            </div>
+            
+            <p style="color: var(--text-dim); font-size: 0.9rem; line-height: 1.6; margin-bottom: 2rem;">
+                Greetings, <strong id="pendingName" style="color: var(--text);">Applicant</strong>. Your portfolio allocation request has been logged. Our underwriters are currently verifying your credentials.
+            </p>
+
+            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 1.2rem; margin-bottom: 2rem; display: flex; flex-direction: column; gap: 0.8rem; text-align: left;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                    <span style="color: var(--text-dim);">Estimated Review Window:</span>
+                    <span style="color: var(--text); font-weight: 500;">24 - 48 Hours</span>
+                </div>
+                <div style="width: 100%; height: 1px; background: rgba(255,255,255,0.05);"></div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                    <span style="color: var(--text-dim);">Queue Position:</span>
+                    <span style="color: var(--gold); font-weight: 600;" id="aheadCount">23 applicants ahead</span>
+                </div>
+                <div style="width: 100%; height: 1px; background: rgba(255,255,255,0.05);"></div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                    <span style="color: var(--text-dim);">Remaining Spot Allocation:</span>
+                    <span style="color: #F87171; font-weight: 600;" id="spotsLeft">Only 7 spots remaining</span>
+                </div>
+            </div>
+
+            <p style="font-size: 0.75rem; color: var(--text-faint); margin-bottom: 1.5rem;">An email notification containing your secure credentials will be issued immediately upon confirmation.</p>
+            <div style="display: flex; gap: 0.8rem; justify-content: center;">
+                <button onclick="resetLookup()" class="button-ghost" style="padding: 0.6rem 1.2rem; font-size: 0.8rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: var(--text); cursor: pointer;">Lookup Another Email</button>
+            </div>
+        </div>
+
+        <!-- Approved State -->
+        <div id="approvedState" style="display: none; text-align: center;">
+            <div style="width: 60px; height: 60px; background: rgba(74, 222, 128, 0.1); border: 1px solid rgba(74, 222, 128, 0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin: 0 auto 1.5rem; color: #4ADE80; animation: scaleUpCheck 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;">✓</div>
+            <h2 style="font-family: var(--font-serif); font-size: 1.6rem; color: var(--text); margin-bottom: 0.5rem; letter-spacing: 0.5px;">APPLICATION APPROVED</h2>
+            <div style="display: inline-block; background: rgba(74, 222, 128, 0.1); border: 1px solid rgba(74, 222, 128, 0.2); color: #4ADE80; padding: 0.35rem 1rem; border-radius: 30px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1.5rem;">
+                Welcome to Monarch Wealth
+            </div>
+
+            <p style="color: var(--text-dim); font-size: 0.9rem; line-height: 1.6; margin-bottom: 2rem;">
+                Congratulations, <strong id="approvedName" style="color: var(--text);">Member</strong>. Your request to join Monarch Wealth Group has been sanctioned. Your exclusive invitation code is ready:
+            </p>
+
+            <!-- Invitation Card -->
+            <div style="background: linear-gradient(135deg, rgba(200, 168, 94, 0.1) 0%, rgba(20, 25, 38, 0.9) 100%); border: 1px solid var(--border-gold); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem; position: relative;">
+                <div style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 2px; margin-bottom: 0.5rem;">Secure Access Invitation Code</div>
+                <div style="font-family: monospace; font-size: 1.6rem; font-weight: 700; color: var(--gold); letter-spacing: 2px;" id="invitationCode">MWG-2026-XXXX</div>
+                
+                <div style="width: 100%; height: 1px; background: rgba(200, 168, 94, 0.15); margin: 1rem 0;"></div>
+                
+                <div style="font-size: 0.72rem; color: #F87171; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
+                    <span>⚠️</span>
+                    <span id="expiryTimer">This invitation expires in 7 days: 06d 23h 59m 59s</span>
+                </div>
+            </div>
+
+            <!-- Steps -->
+            <div style="text-align: left; background: rgba(255,255,255,0.01); border-radius: 12px; padding: 1.2rem; margin-bottom: 2rem; border: 1px solid rgba(255,255,255,0.03);">
+                <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text); letter-spacing: 1px; margin-bottom: 0.8rem;">Required Next Steps:</h4>
+                <ol style="font-size: 0.82rem; color: var(--text-dim); padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.6rem;">
+                    <li>Click the link below to initialize registry setup.</li>
+                    <li>Verify your details and apply your invitation code.</li>
+                    <li>Complete your account setup and place your initial allocation deposit ($500 min).</li>
+                </ol>
+            </div>
+
+            <a id="btnRegister" href="#" class="btn-primary-glow"
+                style="display: block; width: 100%; padding: 1rem; background: var(--gold); color: var(--bg-deep); border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 700; text-decoration: none; text-align: center; box-shadow: 0 4px 15px rgba(200, 168, 94, 0.2); letter-spacing: 0.5px;">
+                Initialize Registry Account Setup →
+            </a>
+        </div>
+
+        <!-- Rejected State -->
+        <div id="rejectedState" style="display: none; text-align: center;">
+            <div style="width: 60px; height: 60px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin: 0 auto 1.5rem; color: #EF4444;">✕</div>
+            <h2 style="font-family: var(--font-serif); font-size: 1.6rem; color: var(--text); margin-bottom: 0.5rem; letter-spacing: 0.5px;">APPLICATION DECLINED</h2>
+            <div style="display: inline-block; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #EF4444; padding: 0.35rem 1rem; border-radius: 30px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1.5rem;">
+                Status: Application Declined
+            </div>
+
+            <p style="color: var(--text-dim); font-size: 0.9rem; line-height: 1.6; margin-bottom: 1.5rem;">
+                Greetings. We regret to inform you that your request to register with Monarch Wealth Group has been declined.
+            </p>
+
+            <div style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.15); border-radius: 12px; padding: 1.2rem; margin-bottom: 2rem; text-align: left;">
+                <div style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 1px; margin-bottom: 0.4rem;">Auditor's Rejection Reason:</div>
+                <div style="color: var(--text); font-size: 0.85rem; line-height: 1.5; font-weight: 500;" id="rejectionReason">Insufficient investment capital or eligibility constraints.</div>
+            </div>
+
+            <p style="color: var(--text-dim); font-size: 0.8rem; margin-bottom: 2rem; line-height: 1.6;">
+                Typical criteria for placement require high-fidelity asset portfolios and accredited stature. You are welcome to submit a secondary registry request in 30 days.
+            </p>
+
+            <div style="display: flex; gap: 0.8rem; justify-content: center;">
+                <button onclick="resetLookup()" class="button-ghost" style="padding: 0.6rem 1.2rem; font-size: 0.8rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: var(--text); cursor: pointer;">Lookup Another Email</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Canvas Particles System
+const canvas = document.getElementById('particleCanvas');
+if (canvas) {
+    const ctx = canvas.getContext('2d');
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    const particles = [];
+    const particleCount = 80;
+    for (let i = 0; i < particleCount; i++) {
+        particles.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: Math.random() * 2 + 0.5,
+            speedX: (Math.random() - 0.5) * 0.2,
+            speedY: (Math.random() - 0.5) * 0.2 - 0.1,
+            opacity: Math.random() * 0.4 + 0.1
+        });
+    }
+
+    function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        particles.forEach(p => {
+            p.x += p.speedX;
+            p.y += p.speedY;
+            if (p.x < 0) p.x = canvas.width;
+            if (p.x > canvas.width) p.x = 0;
+            if (p.y < 0) p.y = canvas.height;
+            if (p.y > canvas.height) p.y = 0;
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(200, 168, 94, ${p.opacity})`;
+            ctx.fill();
+        });
+        requestAnimationFrame(animate);
+    }
+    animate();
+}
+
+let expiryTimerInterval = null;
+
+// Status Lookup
+async function lookupStatus(e) {
+    if (e) e.preventDefault();
+    const emailInput = document.getElementById('lookupEmail').value.trim();
+    if (!emailInput) return;
+
+    const btn = document.getElementById('btnLookup');
+    const errDiv = document.getElementById('lookupError');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Searching Registry...';
+    }
+    if (errDiv) errDiv.style.display = 'none';
+
+    try {
+        const response = await fetch(`/api/application-status/${encodeURIComponent(emailInput)}`);
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            document.getElementById('lookupState').style.display = 'none';
+            
+            if (result.status === 'pending') {
+                document.getElementById('pendingName').textContent = result.full_name;
+                document.getElementById('aheadCount').textContent = `${result.ahead_count} applications ahead of you`;
+                document.getElementById('spotsLeft').textContent = `Only ${result.spots_left} spots remaining this month`;
+                document.getElementById('pendingState').style.display = 'block';
+            } else if (result.status === 'approved' && !result.is_expired) {
+                document.getElementById('approvedName').textContent = result.full_name;
+                document.getElementById('invitationCode').textContent = result.invitation_code;
+                document.getElementById('btnRegister').href = `/register?code=${encodeURIComponent(result.invitation_code)}`;
+                document.getElementById('approvedState').style.display = 'block';
+                
+                // Initialize countdown
+                if (result.expires_at) {
+                    startCountdown(result.expires_at);
+                }
+            } else if (result.status === 'rejected' || result.is_expired) {
+                if (result.is_expired) {
+                    document.getElementById('rejectionReason').textContent = 'The invitation code expired because registration was not completed within the 7-day window.';
+                } else {
+                    document.getElementById('rejectionReason').textContent = result.rejection_reason || 'Insufficient capital size or security mismatch.';
+                }
+                document.getElementById('rejectedState').style.display = 'block';
+            }
+        } else {
+            showError(result.message || 'No registry entry matches this email address.');
+        }
+    } catch (err) {
+        console.error(err);
+        showError('Network latency check failed. Please re-enter credentials.');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Search Registry Records';
+        }
+    }
+}
+
+function showError(msg) {
+    const errDiv = document.getElementById('lookupError');
+    if (errDiv) {
+        errDiv.textContent = msg;
+        errDiv.style.display = 'block';
+    }
+}
+
+function resetLookup() {
+    if (expiryTimerInterval) {
+        clearInterval(expiryTimerInterval);
+    }
+    document.getElementById('pendingState').style.display = 'none';
+    document.getElementById('approvedState').style.display = 'none';
+    document.getElementById('rejectedState').style.display = 'none';
+    document.getElementById('lookupState').style.display = 'block';
+    document.getElementById('lookupEmail').value = '';
+}
+
+function startCountdown(expiryStr) {
+    if (expiryTimerInterval) clearInterval(expiryTimerInterval);
+    
+    const expiryDate = new Date(expiryStr.replace(' ', 'T')).getTime();
+    const display = document.getElementById('expiryTimer');
+
+    function update() {
+        const now = new Date().getTime();
+        const diff = expiryDate - now;
+
+        if (diff <= 0) {
+            display.textContent = 'Invitation status: Expired';
+            clearInterval(expiryTimerInterval);
+            resetLookup();
+            return;
+        }
+
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+        const pad = (num) => String(num).padStart(2, '0');
+        display.innerHTML = `⚠️ Your invitation expires in: <strong>${pad(days)}d ${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s</strong>`;
+    }
+
+    update();
+    expiryTimerInterval = setInterval(update, 1000);
+}
+
+// Auto-run lookup if email is already provided
+document.addEventListener('DOMContentLoaded', () => {
+    const lookupEmail = document.getElementById('lookupEmail').value.trim();
+    if (lookupEmail) {
+        lookupStatus();
+    }
+});
+</script>
+
+<style>
+/* Animations */
+@keyframes floatHourglass {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-8px) rotate(180deg); }
+}
+@keyframes scaleUpCheck {
+    0% { transform: scale(0.6); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+.button-hover {
+    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.button-hover:hover {
+    transform: scale(1.02);
+    background: #d4b76a !important;
+    box-shadow: 0 8px 25px rgba(200, 168, 94, 0.3) !important;
+}
+.button-ghost:hover {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-color: var(--gold) !important;
+}
+.btn-primary-glow {
+    transition: all 0.3s ease;
+}
+.btn-primary-glow:hover {
+    background: #d4b76a !important;
+    box-shadow: 0 0 25px rgba(200, 168, 94, 0.45) !important;
+    transform: translateY(-2px);
+}
+</style>
+{% endblock %}

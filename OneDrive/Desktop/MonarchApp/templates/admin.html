@@ -429,6 +429,49 @@
         </div>
     </div>
 
+    <!-- Mark as Paid Modal -->
+    <div id="markPaidModal" class="admin-modal" style="display:none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: 0.8rem; margin-bottom: 1rem;">
+                <h3 style="color: var(--gold); font-size: 1rem;">💸 Mark as Paid – <span id="markPaidRef">#WD-000</span></h3>
+                <button onclick="closeMarkPaidModal()" style="background: none; border: none; color: var(--text-faint); cursor: pointer; font-size: 1.2rem;">✕</button>
+            </div>
+            <input type="hidden" id="markPaidId">
+            
+            <div style="background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.15); border-radius:10px; padding:0.8rem; margin-bottom:1rem;">
+                <div style="font-size:0.72rem; color:#F59E0B;">⚠️ This will mark the withdrawal as completed.</div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem;">
+                <div>
+                    <h4 style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 1px; margin-bottom: 0.5rem;">Transaction Details</h4>
+                    <div class="detail-row"><span class="lbl">User</span><span class="val" id="markPaidUser">—</span></div>
+                    <div class="detail-row"><span class="lbl">Email</span><span class="val" id="markPaidEmail">—</span></div>
+                    <div class="detail-row"><span class="lbl">Amount</span><span class="val" id="markPaidAmount">$0.00</span></div>
+                    <div class="detail-row"><span class="lbl">Tax</span><span class="val" id="markPaidTax" style="color:#F59E0B;">$0.00</span></div>
+                    <div class="detail-row"><span class="lbl">Net Payout</span><span class="val" id="markPaidNet" style="color:var(--green); font-weight:700;">$0.00</span></div>
+                </div>
+                <div>
+                    <h4 style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 1px; margin-bottom: 0.5rem;">Crypto Wallet</h4>
+                    <div class="detail-row"><span class="lbl">Wallet</span><span class="val" id="markPaidWallet" style="font-family:monospace; font-size:0.65rem;">—</span></div>
+                    <div class="detail-row"><span class="lbl">Network</span><span class="val" id="markPaidNetwork">—</span></div>
+                </div>
+            </div>
+            
+            <div style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+                <div class="form-group">
+                    <label for="markPaidTxid">Transaction ID (TXID) — Optional</label>
+                    <input type="text" id="markPaidTxid" placeholder="e.g. 0xabc123def456..." class="admin-input" style="font-family:monospace;">
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button onclick="closeMarkPaidModal()" class="btn-ghost">Cancel</button>
+                <button onclick="confirmMarkPaid()" class="btn-gold">Confirm & Mark Completed</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Reject Withdrawal Modal -->
     <div id="rejectModal" class="admin-modal" style="display:none;">
         <div class="modal-content">

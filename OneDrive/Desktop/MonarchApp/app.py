@@ -14,10 +14,19 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 def _now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 from functools import wraps
-from database import db, User, Transaction, WithdrawalRequest, PaymentVerification, ReferralBonus, generate_referral_code
+from database import db, User, Transaction, WithdrawalRequest, PaymentVerification, ReferralBonus, WaitingList, ApplicationHistory, generate_referral_code, generate_invitation_code
 from utils import calculate_growth, generate_activity_feed
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
+
+REFERRAL_BONUS_PERCENT = 0.05  # 5% of referred user's first deposit
+# Investment limits
+MIN_DEPOSIT = 500.0        # Minimum deposit in USD
+MIN_WITHDRAWAL = 1000.0      # Minimum withdrawal in USD
+
+# Withdrawal settings
+WITHDRAWAL_TAX_RATE = 0.15      # 15%
+WITHDRAWAL_CUT_OFF_DAY = 25      # withdrawals close on the 25th
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 if os.path.exists(dotenv_path):
@@ -31,13 +40,26 @@ def refresh_payment_settings():
     if os.path.exists(dotenv_path):
         load_dotenv(dotenv_path, override=True)
     global NOWPAYMENTS_API_KEY, PAYSTACK_SECRET_KEY, PAYSTACK_PUBLIC_KEY, ADMIN_SETUP_KEY
+    global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM_EMAIL, SMTP_FROM_NAME
+    global BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PASSWORD
     NOWPAYMENTS_API_KEY = os.getenv('NOWPAYMENTS_API_KEY', '')
     PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', '')
     PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY', '')
     ADMIN_SETUP_KEY = os.getenv('ADMIN_SETUP_KEY', '')
+    SMTP_HOST = os.getenv('SMTP_HOST', '')
+    SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
+    SMTP_USER = os.getenv('SMTP_USER', '')
+    SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
+    SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL', 'noreply@monarchwealth.com')
+    SMTP_FROM_NAME = os.getenv('SMTP_FROM_NAME', 'Monarch Wealth Group')
 
 
 refresh_payment_settings()
+
+BOOTSTRAP_ADMIN_USERNAME = os.getenv("BOOTSTRAP_ADMIN_USERNAME")
+BOOTSTRAP_ADMIN_EMAIL = os.getenv("BOOTSTRAP_ADMIN_EMAIL")
+BOOTSTRAP_ADMIN_PASSWORD = os.getenv("BOOTSTRAP_ADMIN_PASSWORD")
+
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///monarch.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -266,7 +288,6 @@ def verify_paystack_webhook_signature(payload_body, signature):
 # ==================================================================
 # PUBLIC ROUTES
 # ==================================================================
-
 @app.route('/')
 def index():
     # Fetch completed withdrawals for public proof
@@ -274,25 +295,180 @@ def index():
         WithdrawalRequest.status == 'completed',
         WithdrawalRequest.receipt_number.isnot(None)
     ).order_by(WithdrawalRequest.receipt_generated_at.desc()).limit(6).all()
-    return render_template('index.html', completed_withdrawals=completed_withdrawals)
+    
+    # FOMO numbers
+    now = _now()
+    start_of_month = datetime(now.year, now.month, 1)
+    approved_count = WaitingList.query.filter(WaitingList.status == 'approved', WaitingList.approved_at >= start_of_month).count()
+    spots_left = max(0, 10 - approved_count)
+    
+    pending_real = WaitingList.query.filter(WaitingList.status == 'pending').count()
+    pending_count = 127 + pending_real
+
+    return render_template('index.html', 
+                           completed_withdrawals=completed_withdrawals,
+                           spots_left=spots_left,
+                           pending_count=pending_count)
+
+@app.route('/apply')
+def apply_page():
+    now = _now()
+    start_of_month = datetime(now.year, now.month, 1)
+    approved_count = WaitingList.query.filter(WaitingList.status == 'approved', WaitingList.approved_at >= start_of_month).count()
+    spots_left = max(0, 10 - approved_count)
+    pending_real = WaitingList.query.filter(WaitingList.status == 'pending').count()
+    pending_count = 127 + pending_real
+    return render_template('apply.html', spots_left=spots_left, pending_count=pending_count)
+
+@app.route('/api/apply', methods=['POST'])
+def api_submit_application():
+    try:
+        data = request.get_json() or {}
+        full_name = data.get('full_name', '').strip()
+        email = data.get('email', '').strip().lower()
+        phone = data.get('phone', '').strip()
+        country = data.get('country', '').strip()
+        investment_amount = float(data.get('investment_amount', 0))
+        investment_goal = data.get('investment_goal', '').strip()
+        source_of_funds = data.get('source_of_funds', '').strip()
+        referred_by = data.get('referred_by', '').strip()
+        relationship = data.get('relationship', '').strip()
+        additional_notes = data.get('additional_notes', '').strip()
+
+        if not full_name or not email or investment_amount <= 0:
+            return jsonify({'success': False, 'message': 'Missing required fields'}), 400
+
+        if investment_amount < 500:
+            return jsonify({'success': False, 'message': 'Minimum investment amount is $500.'}), 400
+
+        existing = WaitingList.query.filter_by(email=email).filter(WaitingList.status.in_(['pending', 'approved'])).first()
+        if existing:
+            if existing.status == 'approved':
+                return jsonify({'success': False, 'message': f'Your application is already approved. Use code: {existing.invitation_code}'}), 400
+            return jsonify({'success': False, 'message': 'You already have a pending application on the waiting list.'}), 400
+
+        app_record = WaitingList(
+            full_name=full_name,
+            email=email,
+            phone=phone,
+            country=country,
+            investment_amount=investment_amount,
+            investment_goal=investment_goal,
+            source_of_funds=source_of_funds,
+            referred_by=referred_by,
+            relationship=relationship,
+            additional_notes=additional_notes,
+            status='pending'
+        )
+        db.session.add(app_record)
+        db.session.flush() # get ID
+
+        history = ApplicationHistory(
+            waiting_list_id=app_record.id,
+            action='submitted',
+            notes='Application submitted via online portal'
+        )
+        db.session.add(history)
+        db.session.commit()
+
+        return jsonify({'success': True, 'message': 'Application submitted successfully. Your request is now under review.'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/application-status')
+def application_status_page():
+    email = request.args.get('email', '').strip().lower()
+    return render_template('application_status.html', email=email)
+
+@app.route('/api/application-status/<email>')
+def api_application_status(email):
+    email = email.strip().lower()
+    invite = WaitingList.query.filter_by(email=email).order_by(WaitingList.created_at.desc()).first()
+    if not invite:
+        return jsonify({'success': False, 'message': 'No application found for this email address.'}), 404
+
+    now = _now()
+    start_of_month = datetime(now.year, now.month, 1)
+    approved_count = WaitingList.query.filter(WaitingList.status == 'approved', WaitingList.approved_at >= start_of_month).count()
+    spots_left = max(0, 10 - approved_count)
+    pending_real = WaitingList.query.filter(WaitingList.status == 'pending').count()
+    pending_count = 127 + pending_real
+
+    ahead_count = 0
+    if invite.status == 'pending':
+        ahead_count = WaitingList.query.filter(WaitingList.status == 'pending', WaitingList.created_at < invite.created_at).count()
+
+    # check if expired
+    is_expired = invite.status == 'approved' and invite.expires_at and invite.expires_at < now
+
+    return jsonify({
+        'success': True,
+        'status': invite.status,
+        'full_name': invite.full_name,
+        'email': invite.email,
+        'invitation_code': invite.invitation_code if invite.status == 'approved' and not is_expired else None,
+        'expires_at': invite.expires_at.strftime('%Y-%m-%d %H:%M:%S') if invite.expires_at else None,
+        'is_expired': is_expired,
+        'rejection_reason': invite.rejection_reason if invite.status == 'rejected' else None,
+        'created_at': invite.created_at.strftime('%B %d, %Y'),
+        'ahead_count': ahead_count,
+        'spots_left': spots_left,
+        'pending_count': pending_count
+    })
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+
+    invitation_code = request.args.get('code', '').strip().upper()
+
     if request.method == 'POST':
         username = request.form['username']
-        email = request.form['email']
+        email = request.form['email'].strip().lower()
         password = request.form['password']
         referral_code = request.form.get('referral_code', '').strip()
+        form_invite_code = request.form.get('invitation_code', '').strip().upper()
+
+        if not form_invite_code:
+            flash('An invitation code is required to register.')
+            return render_template('register.html', invitation_code=form_invite_code)
+
+        invite = WaitingList.query.filter_by(invitation_code=form_invite_code, status='approved').first()
+        if not invite:
+            flash('Invalid or unapproved invitation code.')
+            return render_template('register.html', invitation_code=form_invite_code)
+
+        if invite.expires_at and invite.expires_at < _now():
+            flash('This invitation code has expired (7-day validity limit).')
+            return render_template('register.html', invitation_code=form_invite_code)
+
+        if invite.email.strip().lower() != email:
+            flash('The email address entered does not match the approved invitation.')
+            return render_template('register.html', invitation_code=form_invite_code)
+
+        existing_user_code = User.query.filter_by(invitation_code=form_invite_code).first()
+        if existing_user_code:
+            flash('This invitation code has already been registered.')
+            return render_template('register.html', invitation_code=form_invite_code)
 
         if User.query.filter_by(username=username).first():
             flash('Username already exists')
-            return redirect(url_for('register'))
+            return render_template('register.html', invitation_code=form_invite_code)
         if User.query.filter_by(email=email).first():
             flash('Email already registered')
-            return redirect(url_for('register'))
+            return render_template('register.html', invitation_code=form_invite_code)
 
         hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-        user = User(username=username, email=email, password_hash=hashed.decode('utf-8'))
+        user = User(
+            username=username,
+            email=email,
+            password_hash=hashed.decode('utf-8'),
+            waiting_list_id=invite.id,
+            invitation_code=form_invite_code,
+            invitation_expires_at=invite.expires_at,
+            is_approved=True
+        )
 
         # Handle referral code
         referrer = None
@@ -309,7 +485,8 @@ def register():
         db.session.commit()
         flash('Registration successful! Please log in.')
         return redirect(url_for('login'))
-    return render_template('register.html')
+        
+    return render_template('register.html', invitation_code=invitation_code)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -318,6 +495,9 @@ def login():
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
         if user and bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
+            if not getattr(user, 'is_approved', True):
+                flash('Your account has not been approved.')
+                return redirect(url_for('login'))
             login_user(user)
             apply_growth(user)
             return redirect(url_for('dashboard'))
@@ -333,6 +513,10 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    if not getattr(current_user, 'is_approved', True):
+        logout_user()
+        flash('Your account has not been approved.')
+        return redirect(url_for('login'))
     apply_growth(current_user)
     # Get referral code info
     referred_count = User.query.filter_by(referred_by=current_user.id).count()
@@ -341,7 +525,11 @@ def dashboard():
     return render_template('dashboard.html', user=current_user,
                            paystack_public_key=PAYSTACK_PUBLIC_KEY,
                            referred_count=referred_count,
-                           referral_bonuses=referral_bonuses)
+                           referral_bonuses=referral_bonuses,
+                           min_deposit=MIN_DEPOSIT,
+                           min_withdrawal=MIN_WITHDRAWAL,
+                           withdrawal_tax_rate=int(WITHDRAWAL_TAX_RATE * 100),
+                           cut_off_day=WITHDRAWAL_CUT_OFF_DAY)
 
 
 # ==================================================================
@@ -1384,6 +1572,233 @@ def admin_stats():
     })
 
 
+@app.route('/api/admin/waiting-list')
+@login_required
+@admin_required
+def admin_waiting_list():
+    status_filter = request.args.get('status', '').strip().lower()
+    page = int(request.args.get('page', 1))
+    limit = int(request.args.get('limit', 10))
+    offset = (page - 1) * limit
+    
+    query = WaitingList.query
+    if status_filter:
+        query = query.filter_by(status=status_filter)
+        
+    total_count = query.count()
+    apps = query.order_by(WaitingList.created_at.desc()).offset(offset).limit(limit).all()
+    
+    serialized = []
+    for a in apps:
+        serialized.append({
+            'id': a.id,
+            'full_name': a.full_name,
+            'email': a.email,
+            'phone': a.phone or '',
+            'country': a.country or '',
+            'investment_amount': round(a.investment_amount, 2) if a.investment_amount else 0,
+            'investment_goal': a.investment_goal or '',
+            'source_of_funds': a.source_of_funds or '',
+            'referred_by': a.referred_by or '',
+            'relationship': a.relationship or '',
+            'additional_notes': a.additional_notes or '',
+            'status': a.status,
+            'rejection_reason': a.rejection_reason or '',
+            'invitation_code': a.invitation_code or '',
+            'created_at': a.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'expires_at': a.expires_at.strftime('%Y-%m-%d %H:%M:%S') if a.expires_at else ''
+        })
+        
+    return jsonify({
+        'success': True,
+        'applications': serialized,
+        'total': total_count,
+        'page': page,
+        'limit': limit
+    })
+
+@app.route('/api/admin/waiting-list/<int:app_id>')
+@login_required
+@admin_required
+def admin_waiting_list_detail(app_id):
+    a = WaitingList.query.get_or_404(app_id)
+    return jsonify({
+        'success': True,
+        'application': {
+            'id': a.id,
+            'full_name': a.full_name,
+            'email': a.email,
+            'phone': a.phone or '',
+            'country': a.country or '',
+            'investment_amount': round(a.investment_amount, 2) if a.investment_amount else 0,
+            'investment_goal': a.investment_goal or '',
+            'source_of_funds': a.source_of_funds or '',
+            'referred_by': a.referred_by or '',
+            'relationship': a.relationship or '',
+            'additional_notes': a.additional_notes or '',
+            'status': a.status,
+            'rejection_reason': a.rejection_reason or '',
+            'invitation_code': a.invitation_code or '',
+            'created_at': a.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'expires_at': a.expires_at.strftime('%Y-%m-%d %H:%M:%S') if a.expires_at else ''
+        }
+    })
+
+@app.route('/api/admin/waiting-list/<int:app_id>/approve', methods=['POST'])
+@login_required
+@admin_required
+def admin_approve_application(app_id):
+    a = WaitingList.query.get_or_404(app_id)
+    if a.status != 'pending':
+        return jsonify({'success': False, 'message': 'Application is not pending review'}), 400
+        
+    code = generate_invitation_code()
+    a.status = 'approved'
+    a.approved_at = _now()
+    a.expires_at = _now() + timedelta(days=7)
+    a.invitation_code = code
+    a.reviewed_by = current_user.id
+    
+    history = ApplicationHistory(
+        waiting_list_id=a.id,
+        action='approved',
+        notes=f'Approved by admin {current_user.username}',
+        performed_by=current_user.id
+    )
+    db.session.add(history)
+    db.session.commit()
+    
+    # Stub approval email print
+    print(f"EMAIL SENT TO {a.email}: Congratulations! Your invitation code is {code}. Expires in 7 days.")
+    
+    return jsonify({
+        'success': True, 
+        'message': f'Application approved successfully. Invitation code: {code}',
+        'invitation_code': code
+    })
+
+@app.route('/api/admin/waiting-list/<int:app_id>/reject', methods=['POST'])
+@login_required
+@admin_required
+def admin_reject_application(app_id):
+    a = WaitingList.query.get_or_404(app_id)
+    if a.status != 'pending':
+        return jsonify({'success': False, 'message': 'Application is not pending review'}), 400
+        
+    data = request.get_json() or {}
+    reason = data.get('reason', '').strip()
+    if not reason:
+        return jsonify({'success': False, 'message': 'Rejection reason is required'}), 400
+        
+    a.status = 'rejected'
+    a.rejected_at = _now()
+    a.rejection_reason = reason
+    a.reviewed_by = current_user.id
+    
+    history = ApplicationHistory(
+        waiting_list_id=a.id,
+        action='rejected',
+        notes=f'Rejected by admin {current_user.username}. Reason: {reason}',
+        performed_by=current_user.id
+    )
+    db.session.add(history)
+    db.session.commit()
+    
+    # Stub rejection email print
+    print(f"EMAIL SENT TO {a.email}: Application declined. Reason: {reason}")
+    
+    return jsonify({'success': True, 'message': 'Application rejected successfully'})
+
+@app.route('/api/admin/waiting-list/bulk-approve', methods=['POST'])
+@login_required
+@admin_required
+def admin_bulk_approve():
+    data = request.get_json() or {}
+    ids = data.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No applications selected'}), 400
+        
+    approved_count = 0
+    for app_id in ids:
+        a = WaitingList.query.get(app_id)
+        if a and a.status == 'pending':
+            code = generate_invitation_code()
+            a.status = 'approved'
+            a.approved_at = _now()
+            a.expires_at = _now() + timedelta(days=7)
+            a.invitation_code = code
+            a.reviewed_by = current_user.id
+            
+            history = ApplicationHistory(
+                waiting_list_id=a.id,
+                action='approved',
+                notes=f'Approved via bulk action by admin {current_user.username}',
+                performed_by=current_user.id
+            )
+            db.session.add(history)
+            approved_count += 1
+            print(f"EMAIL SENT TO {a.email}: Congratulations (bulk approval)! Your invitation code is {code}.")
+            
+    db.session.commit()
+    return jsonify({'success': True, 'message': f'Successfully approved {approved_count} applications.'})
+
+@app.route('/api/admin/waiting-list/bulk-reject', methods=['POST'])
+@login_required
+@admin_required
+def admin_bulk_reject():
+    data = request.get_json() or {}
+    ids = data.get('ids', [])
+    reason = data.get('reason', '').strip()
+    if not ids:
+        return jsonify({'success': False, 'message': 'No applications selected'}), 400
+    if not reason:
+        return jsonify({'success': False, 'message': 'Rejection reason is required'}), 400
+        
+    rejected_count = 0
+    for app_id in ids:
+        a = WaitingList.query.get(app_id)
+        if a and a.status == 'pending':
+            a.status = 'rejected'
+            a.rejected_at = _now()
+            a.rejection_reason = reason
+            a.reviewed_by = current_user.id
+            
+            history = ApplicationHistory(
+                waiting_list_id=a.id,
+                action='rejected',
+                notes=f'Rejected via bulk action by admin {current_user.username}. Reason: {reason}',
+                performed_by=current_user.id
+            )
+            db.session.add(history)
+            rejected_count += 1
+            print(f"EMAIL SENT TO {a.email}: Application declined (bulk). Reason: {reason}")
+            
+    db.session.commit()
+    return jsonify({'success': True, 'message': f'Successfully rejected {rejected_count} applications.'})
+
+@app.route('/api/admin/waiting-list/stats')
+@login_required
+@admin_required
+def admin_waiting_list_stats():
+    now = _now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    total = WaitingList.query.count()
+    pending = WaitingList.query.filter_by(status='pending').count()
+    approved_this_month = WaitingList.query.filter(WaitingList.status == 'approved', WaitingList.approved_at >= month_start).count()
+    rejected_this_month = WaitingList.query.filter(WaitingList.status == 'rejected', WaitingList.rejected_at >= month_start).count()
+    spots_left = max(0, 10 - approved_this_month)
+    
+    return jsonify({
+        'success': True,
+        'total': 127 + total, # combine real + baseline
+        'pending': pending,
+        'approved_this_month': approved_this_month,
+        'rejected_this_month': rejected_this_month,
+        'spots_left': spots_left
+    })
+
+
 @app.route('/api/admin/withdrawals')
 @login_required
 @admin_required
@@ -1972,6 +2387,34 @@ def submit_banking_details(withdrawal_id):
 # ==================================================================
 with app.app_context():
     db.create_all()
+    admin = User.query.filter_by(username=BOOTSTRAP_ADMIN_USERNAME).first()
+
+    if BOOTSTRAP_ADMIN_USERNAME and BOOTSTRAP_ADMIN_PASSWORD:
+        if not admin:
+            hashed = bcrypt.hashpw(
+                BOOTSTRAP_ADMIN_PASSWORD.encode("utf-8"),
+                bcrypt.gensalt()
+            )
+
+            admin = User(
+                username=BOOTSTRAP_ADMIN_USERNAME,
+                email=BOOTSTRAP_ADMIN_EMAIL,
+                password_hash=hashed.decode("utf-8"),
+                is_admin=True,
+                is_approved=True,
+                referral_code=generate_referral_code()
+            )
+
+            db.session.add(admin)
+            db.session.commit()
+
+            print("✅ Bootstrap admin created.")
+
+        elif not admin.is_admin:
+            admin.is_admin = True
+            db.session.commit()
+            print("✅ Existing user promoted to admin.")
+
     # Dynamic SQLite migration for receipt_image column
     try:
         raw_conn = db.engine.raw_connection()
@@ -2075,6 +2518,28 @@ with app.app_context():
             print("Successfully migrated database: added referral_earnings column.")
         except Exception as err:
             print("Migration warning (ignored if column exists):", err)
+
+    # Dynamic SQLite migration for waiting list columns on user
+    try:
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("SELECT is_approved FROM user LIMIT 1")
+        raw_conn.close()
+    except Exception:
+        try:
+            db.session.rollback()
+            raw_conn = db.engine.raw_connection()
+            cursor = raw_conn.cursor()
+            cursor.execute("ALTER TABLE user ADD COLUMN waiting_list_id INTEGER REFERENCES waiting_list(id)")
+            cursor.execute("ALTER TABLE user ADD COLUMN invitation_code VARCHAR(50) UNIQUE")
+            cursor.execute("ALTER TABLE user ADD COLUMN invitation_expires_at DATETIME")
+            cursor.execute("ALTER TABLE user ADD COLUMN is_approved BOOLEAN DEFAULT 1")
+            cursor.execute("UPDATE user SET is_approved = 1 WHERE is_approved IS NULL")
+            raw_conn.commit()
+            raw_conn.close()
+            print("Successfully migrated database: added waiting list columns.")
+        except Exception as err:
+            print("Migration warning (waiting list columns):", err)
 
     # Generate referral codes for existing users that don't have one
     try:

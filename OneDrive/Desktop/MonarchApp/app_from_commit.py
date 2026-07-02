@@ -19,6 +19,12 @@ from utils import calculate_growth, generate_activity_feed
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 
+REFERRAL_BONUS_PERCENT = 0.05  # 5% of referred user's first deposit
+
+# Investment limits
+MIN_DEPOSIT = 500.0        # Minimum deposit in USD
+MIN_WITHDRAWAL = 1000.0      # Minimum withdrawal in USD
+
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path, override=True)
@@ -35,6 +41,7 @@ def refresh_payment_settings():
     PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', '')
     PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY', '')
     ADMIN_SETUP_KEY = os.getenv('ADMIN_SETUP_KEY', '')
+
 
 
 refresh_payment_settings()

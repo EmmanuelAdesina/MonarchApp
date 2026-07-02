@@ -20,10 +20,11 @@
       <a href="#portfolio">Portfolio</a>
       <a href="#how">How It Works</a>
       <a href="#testimonials">Testimonials</a>
+      <a href="{{ url_for('application_status_page') }}">Registry Status</a>
     </div>
     <div class="nav-actions">
       <a href="{{ url_for('login') }}" class="btn-ghost-nav">Log In</a>
-      <a href="{{ url_for('register') }}" class="btn-nav-primary">Get Started</a>
+      <a href="{{ url_for('apply_page') }}" class="btn-nav-primary">Apply</a>
       <button class="hamburger" id="hamburger" aria-label="Menu">
         <span></span><span></span><span></span>
       </button>
@@ -34,7 +35,7 @@
   <section class="hero" id="hero">
     <div class="hero-bg">
       <div class="hero-overlay"></div>
-      <div class="hero-particles" id="particles"></div>
+      <canvas id="particleCanvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;"></canvas>
       <div class="hero-cityscape"></div>
     </div>
     <div class="hero-content">
@@ -47,16 +48,49 @@
         <span class="gold-text">wealth</span> quietly grows.
       </h1>
       <p class="hero-sub animate-fade-up stagger-2">
-        Join <strong>14,000+</strong> professionals building real wealth through curated investments.
-        Start with as little as <strong>$100</strong>.
+Join <strong>14,000+</strong> professionals building real wealth through curated investments.
+Start with as little as <strong>$500</strong>. Minimum withdrawal: <strong>$1,000</strong>.
       </p>
-      <div class="hero-cta animate-fade-up stagger-3">
-        <a href="{{ url_for('register') }}" class="btn-hero-primary">
+      <div class="hero-cta animate-fade-up stagger-3" style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+        <a href="{{ url_for('apply_page') }}" class="btn-hero-primary pulse-gold" style="display: inline-flex; align-items: center; gap: 0.5rem;">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2V18M18 10H2" stroke="#0A0D1A" stroke-width="2.5" stroke-linecap="round"/></svg>
-          Start Building Wealth
+          Apply for Invitation
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3L11 8L6 13" stroke="#0A0D1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
+        <a href="{{ url_for('application_status_page') }}" class="btn-hero-secondary" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.85rem 1.8rem; border-radius: 50px; font-weight: 600; font-size: 0.88rem; color: var(--text); border: 1px solid var(--border-gold); background: rgba(255,255,255,0.02); text-decoration: none; transition: all 0.3s;" onmouseover="this.style.background='rgba(255,255,255,0.06)'" onmouseout="this.style.background='rgba(255,255,255,0.02)'">
+          Check Registry Status
+        </a>
       </div>
+
+      <!-- Scarcity and FOMO counters -->
+      <div class="fomo-counters-container animate-fade-up stagger-4" style="margin: 2rem auto 0; display: flex; flex-direction: column; gap: 1rem; align-items: center; background: rgba(20, 25, 38, 0.7); border: 1px solid var(--border-gold); padding: 1.2rem 1.8rem; border-radius: 16px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); width: 100%; max-width: 520px; z-index: 2; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+          <div style="display: flex; width: 100%; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+              <div style="text-align: left;">
+                  <div style="color: #EF4444; font-size: 0.65rem; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">🔥 Spots Allocation</div>
+                  <div style="font-size: 1.15rem; font-weight: 800; color: var(--text); font-family: var(--font-serif); margin-top: 0.2rem;"><span id="spotsLeft">{{ spots_left }}</span> / 10 Spots Left</div>
+              </div>
+              <div style="text-align: right;">
+                  <div style="color: var(--gold); font-size: 0.65rem; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">📋 Registry Queue</div>
+                  <div style="font-size: 1.1rem; font-weight: 600; color: var(--text); margin-top: 0.2rem;"><span id="pendingCount">{{ pending_count }}</span> Waiting List</div>
+              </div>
+          </div>
+          <div style="width: 100%; height: 1px; background: rgba(255,255,255,0.05);"></div>
+          <div style="display: flex; width: 100%; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; font-size: 0.8rem;">
+              <!-- Countdown timer -->
+              <div style="text-align: left;">
+                  <div style="color: var(--text-dim); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.25rem;">⏳ Next Invitation Cycle</div>
+                  <div style="font-size: 0.85rem; font-weight: 700; color: var(--gold); font-family: monospace; letter-spacing: 1px;" id="countdownDisplay">
+                      <span id="days">00</span>d : <span id="hours">00</span>h : <span id="minutes">00</span>m : <span id="seconds">00</span>s
+                  </div>
+              </div>
+              <!-- Live counter -->
+              <div style="display: flex; align-items: center; gap: 0.4rem; background: rgba(74, 222, 128, 0.05); padding: 0.35rem 0.75rem; border-radius: 30px; border: 1px solid rgba(74, 222, 128, 0.15);">
+                  <span class="pulse-dot" style="display: inline-block; width: 6px; height: 6px; background: #4ADE80; border-radius: 50%;"></span>
+                  <span style="font-size: 0.72rem; color: #4ADE80; font-weight: 600;"><span id="liveMembers">1427</span> Online Now</span>
+              </div>
+          </div>
+      </div>
+
       <div class="hero-trust animate-fade-up stagger-4">
         <span class="trust-pill">⚜ Trusted by investors in 47 countries</span>
         <div class="hero-logos">
@@ -93,6 +127,23 @@
         <span class="trust-label">Satisfaction</span>
       </div>
     </div>
+  </section>
+
+  <!-- ====== LIVE ACTIVITY FEED ====== -->
+  <section class="live-activity-section" style="padding: 2.5rem 1.5rem; background: rgba(20, 25, 38, 0.4); border-bottom: 1px solid var(--border); overflow: hidden; position: relative;">
+      <div style="max-width: 800px; margin: 0 auto; text-align: center;">
+          <span style="color: var(--gold); font-size: 0.68rem; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 0.5rem; display: inline-flex; align-items: center; gap: 0.4rem;">
+              <span class="pulse-dot" style="display: inline-block; width: 8px; height: 8px; background: #4ADE80; border-radius: 50%;"></span>
+              📡 LIVE PLATFORM MOMENTUM
+          </span>
+          <h3 style="font-family: var(--font-serif); font-size: 1.35rem; margin-bottom: 1.5rem; color: var(--text);">Real-time Member Placements & Growth</h3>
+          
+          <div class="live-activity-feed-container" style="background: rgba(10, 13, 26, 0.5); border: 1px solid var(--border-gold); padding: 1.5rem; border-radius: 12px; height: 180px; overflow: hidden; position: relative;">
+              <div id="landingFeed" style="display: flex; flex-direction: column; gap: 0.8rem; width: 100%; position: absolute; left: 0; right: 0; padding: 0 1.5rem; transition: transform 0.5s ease;">
+                  <!-- Injected by JS -->
+              </div>
+          </div>
+      </div>
   </section>
 
   <!-- ====== AS FEATURED IN ====== -->
@@ -212,7 +263,7 @@
           <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><circle cx="18" cy="18" r="14" stroke="#C8A85E" stroke-width="2"/><path d="M18 8V18L24 22" stroke="#C8A85E" stroke-width="2" stroke-linecap="round"/><path d="M10 18H14M22 18H24" stroke="#C8A85E" stroke-width="1.5" stroke-linecap="round"/></svg>
         </div>
         <h3>Fund Your Portfolio</h3>
-        <p>Start with as little as <strong>$100</strong>.</p>
+        <p>Start with as little as <strong>$500</strong>. Minimum deposit: <strong>$500</strong>.</p>
       </div>
       <div class="how-arrow">
         <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><path d="M10 4L22 16L10 28" stroke="#C8A85E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/></svg>
@@ -276,10 +327,10 @@
     <div class="cta-bg-pattern"></div>
     <div class="cta-content">
       <h2 class="cta-title">Build your wealth with the world's most prestigious private investment platform.</h2>
-      <p class="cta-sub">Membership is currently open. Start with as little as <strong>$100</strong>.</p>
-      <a href="{{ url_for('register') }}" class="btn-hero-primary cta-btn">
+      <p class="cta-sub">Membership is currently open. Start with as little as <strong>$500</strong>.</p>
+      <a href="{{ url_for('apply_page') }}" class="btn-hero-primary cta-btn">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2V18M18 10H2" stroke="#0A0D1A" stroke-width="2.5" stroke-linecap="round"/></svg>
-        Start Building Wealth
+        Apply for Invitation
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3L11 8L6 13" stroke="#0A0D1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </a>
       <p class="cta-disclaimer">*Investments carry risk. Past performance is not indicative of future results.</p>
@@ -396,28 +447,177 @@ function handleScrollAnimations() {
   elements.forEach(el => observer.observe(el));
 }
 
-// ====== PARTICLE EFFECT ======
-function createParticles() {
-  const container = document.getElementById('particles');
-  if (!container) return;
-  const count = 30;
-  for (let i = 0; i < count; i++) {
-    const particle = document.createElement('div');
-    particle.className = 'particle';
-    const size = Math.random() * 3 + 1;
-    particle.style.width = size + 'px';
-    particle.style.height = size + 'px';
-    particle.style.left = Math.random() * 100 + '%';
-    particle.style.top = Math.random() * 100 + '%';
-    particle.style.animationDuration = (Math.random() * 6 + 4) + 's';
-    particle.style.animationDelay = (Math.random() * 5) + 's';
-    container.appendChild(particle);
+// ====== PARTICLE EFFECT (CANVAS) ======
+function initCanvasParticles() {
+  const particleCanvas = document.getElementById('particleCanvas');
+  if (particleCanvas) {
+      const pCtx = particleCanvas.getContext('2d');
+      function resizeParticleCanvas() {
+          particleCanvas.width = particleCanvas.parentElement.offsetWidth;
+          particleCanvas.height = particleCanvas.parentElement.offsetHeight;
+      }
+      resizeParticleCanvas();
+      window.addEventListener('resize', resizeParticleCanvas);
+      
+      const canvasParticles = [];
+      for (let i = 0; i < 70; i++) {
+          canvasParticles.push({
+              x: Math.random() * particleCanvas.width,
+              y: Math.random() * particleCanvas.height,
+              size: Math.random() * 2 + 0.5,
+              speedX: (Math.random() - 0.5) * 0.15,
+              speedY: (Math.random() - 0.5) * 0.15 - 0.05,
+              opacity: Math.random() * 0.35 + 0.05
+          });
+      }
+      
+      function animateCanvasParticles() {
+          pCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+          canvasParticles.forEach(p => {
+              p.x += p.speedX;
+              p.y += p.speedY;
+              if (p.x < 0) p.x = particleCanvas.width;
+              if (p.x > particleCanvas.width) p.x = 0;
+              if (p.y < 0) p.y = particleCanvas.height;
+              if (p.y > particleCanvas.height) p.y = 0;
+              
+              pCtx.beginPath();
+              pCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+              pCtx.fillStyle = `rgba(200, 168, 94, ${p.opacity})`;
+              pCtx.fill();
+          });
+          requestAnimationFrame(animateCanvasParticles);
+      }
+      animateCanvasParticles();
   }
+}
+
+// ====== COUNTDOWN TIMER ======
+function initCountdown() {
+    function updateCountdown() {
+        const now = new Date();
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        const diff = lastDay - now;
+        if (diff <= 0) {
+            document.getElementById('countdownDisplay').textContent = "Registration Closed";
+            return;
+        }
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        
+        const pad = (num) => String(num).padStart(2, '0');
+        
+        const dEl = document.getElementById('days');
+        const hEl = document.getElementById('hours');
+        const mEl = document.getElementById('minutes');
+        const sEl = document.getElementById('seconds');
+        if (dEl && hEl && mEl && sEl) {
+            dEl.textContent = pad(days);
+            hEl.textContent = pad(hours);
+            mEl.textContent = pad(minutes);
+            sEl.textContent = pad(seconds);
+        }
+    }
+    setInterval(updateCountdown, 1000);
+    updateCountdown();
+}
+
+// ====== LIVE ONLINE COUNTER ======
+function initLiveOnlineCounter() {
+    let liveMembers = 1427;
+    let direction = 1;
+    const liveEl = document.getElementById('liveMembers');
+    if (!liveEl) return;
+    function updateLiveMembers() {
+        const change = Math.floor(Math.random() * 5) + 1;
+        liveMembers += change * direction;
+        if (liveMembers > 1460) direction = -1;
+        if (liveMembers < 1400) direction = 1;
+        liveEl.textContent = liveMembers.toLocaleString();
+    }
+    setInterval(updateLiveMembers, 3000);
+}
+
+// ====== LIVE ACTIVITY FEED ======
+const activityTemplates = [
+    { name: 'Sarah K.', action: 'just deposited', amount: '$1,200', time: '2m ago', type: 'deposit' },
+    { name: 'Michael R.', action: 'earned', amount: '$84.50 on NVIDIA (NVDA)', time: '7m ago', type: 'growth' },
+    { name: 'Emma W.', action: 'withdrew', amount: '$250', time: '18m ago', type: 'withdrawal' },
+    { name: 'David L.', action: 'portfolio grew by', amount: '3.2%', time: '1h ago', type: 'growth' },
+    { name: 'Jessica M.', action: 'just deposited', amount: '$500', time: '2h ago', type: 'deposit' },
+    { name: 'James P.', action: 'earned', amount: '$142.30 on Tesla (TSLA)', time: '3h ago', type: 'growth' },
+    { name: 'Amanda T.', action: 'withdrew', amount: '$1,000', time: '5h ago', type: 'withdrawal' },
+    { name: 'Robert C.', action: 'portfolio grew by', amount: '5.1%', time: '8h ago', type: 'growth' },
+    { name: 'Sophia M.', action: 'just deposited', amount: '$2,500', time: '25m ago', type: 'deposit' },
+    { name: 'Alexander W.', action: 'earned', amount: '$310.45 on Bitcoin (BTC)', time: '40m ago', type: 'growth' },
+    { name: 'Olivia Y.', action: 'withdrew', amount: '$1,800', time: '1h ago', type: 'withdrawal' }
+];
+
+let displayedFeed = [];
+function initFeed() {
+    const feedContainer = document.getElementById('landingFeed');
+    if (!feedContainer) return;
+    const shuffled = [...activityTemplates].sort(() => Math.random() - 0.5);
+    displayedFeed = shuffled.slice(0, 3);
+    renderFeed();
+    
+    setInterval(() => {
+        const nextItem = activityTemplates[Math.floor(Math.random() * activityTemplates.length)];
+        const itemCopy = {...nextItem, time: 'Just now'};
+        displayedFeed.unshift(itemCopy);
+        if (displayedFeed.length > 3) {
+            displayedFeed.pop();
+        }
+        renderFeed();
+    }, 5000);
+}
+
+function renderFeed() {
+    const container = document.getElementById('landingFeed');
+    if (!container) return;
+    
+    container.innerHTML = displayedFeed.map((item, index) => {
+        let icon = '📊';
+        let color = 'var(--text-dim)';
+        if (item.type === 'deposit') { icon = '💰'; color = '#4ADE80'; }
+        if (item.type === 'withdrawal') { icon = '💸'; color = '#F87171'; }
+        if (item.type === 'growth') { icon = '📈'; color = 'var(--gold)'; }
+        
+        return `
+            <div class="feed-item slide-in" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 0.8rem 1.2rem; border-radius: 8px; font-size: 0.82rem; font-family: var(--font-sans); text-align: left; opacity: ${1 - (index * 0.25)};">
+                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                    <span style="font-size: 1.1rem;">${icon}</span>
+                    <span style="color: var(--text);"><strong>${item.name}</strong> ${item.action} <span style="color: ${color}; font-weight: 600;">${item.amount}</span></span>
+                </div>
+                <span style="color: var(--text-faint); font-size: 0.72rem;">${item.time}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+// ====== SCROLL ANIMATIONS ======
+function handleScrollAnimations() {
+  const elements = document.querySelectorAll('.animate-on-scroll');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15, rootMargin: '0px 0px -50px 0px' });
+
+  elements.forEach(el => observer.observe(el));
 }
 
 // ====== INIT ======
 document.addEventListener('DOMContentLoaded', () => {
-  createParticles();
+  initCanvasParticles();
+  initCountdown();
+  initLiveOnlineCounter();
+  initFeed();
   handleScrollAnimations();
   // Start counters when trust bar is in view
   const trustBar = document.getElementById('trust-bar');

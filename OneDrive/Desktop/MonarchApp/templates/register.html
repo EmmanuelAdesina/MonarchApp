@@ -25,6 +25,14 @@
 
         <form action="{{ url_for('register') }}" method="POST" style="display: flex; flex-direction: column; gap: 1.2rem;">
             <div>
+                <label for="invitation_code" style="display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--gold); margin-bottom: 0.5rem;">Invitation Code *</label>
+                <input type="text" id="invitation_code" name="invitation_code" required placeholder="e.g. MWG-2026-A3F2" value="{{ invitation_code or '' }}"
+                    style="width: 100%; padding: 0.8rem; background: var(--bg); border: 1px solid var(--border-gold); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.3s; text-transform: uppercase;"
+                    onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border-gold)'">
+                <small style="display: block; color: var(--text-faint); font-size: 0.65rem; margin-top: 0.3rem;">Required. Check your status to retrieve your invitation code.</small>
+            </div>
+
+            <div>
                 <label for="username" style="display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); margin-bottom: 0.5rem;">Username</label>
                 <input type="text" id="username" name="username" required 
                     style="width: 100%; padding: 0.8rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.3s;"
