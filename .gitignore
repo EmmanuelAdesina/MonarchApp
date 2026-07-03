@@ -5,3 +5,28 @@ instance/
 *.db
 
 .env
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Database
+instance/
+*.db
+
+# Environment variables
+.env
+
+# Temporary files
+tmp/
+*.log
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
