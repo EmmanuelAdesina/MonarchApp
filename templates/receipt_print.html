@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payout Settlement Slip - {{ receipt.receipt_number }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <meta name="receipt-type" content="{% if is_marketing %}marketing{% else %}withdrawal{% endif %}">
+    <style>
+        :root {
+            --bg-slip: #FFFFFF;
+            --text-dark: #1F2937;
+            --text-gray: #4B5563;
+            --text-light: #9CA3AF;
+            --green: #15803D;
+            --border-slip: #E5E7EB;
+            --gold-stamp: #9A8B3A;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #F3F4F6;
+            color: var(--text-dark);
+            line-height: 1.5;
+            padding: 2rem 1rem;
+        }
+
+        /* Floating action bar for printing */
+        .print-bar {
+            max-width: 680px;
+            margin: 0 auto 1.5rem;
+            background: #111827;
+            border-radius: 8px;
+            padding: 0.8rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+        }
+
+        .print-bar .info {
+            color: #E5E7EB;
+            font-size: 0.8rem;
+        }
+
+        .print-bar .btn-print {
+            background: #C9A84C;
+            color: #111827;
+            border: none;
+            padding: 0.5rem 1.2rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-transform: uppercase;
+            transition: opacity 0.2s;
+        }
+
+        .print-bar .btn-print:hover {
+            opacity: 0.9;
+        }
+
+        /* Main Receipt container */
+        .receipt-container {
+            max-width: 680px;
+            margin: 0 auto;
+            background: var(--bg-slip);
+            border: 1px solid var(--border-slip);
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            padding: 2.5rem 3rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Header block */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #F3F4F6;
+            padding-bottom: 1.5rem;
+            margin-bottom: 1.8rem;
+        }
+
+        .header .logo {
+            font-size: 1.4rem;
+            font-weight: 800;
+            font-family: Georgia, serif;
+            letter-spacing: -0.5px;
+            color: #111827;
+        }
+
+        .header .logo span {
+            color: #A88B3A;
+        }
+
+        .header .slip-title {
+            text-align: right;
+        }
+
+        .header .slip-title h1 {
+            font-size: 1rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dark);
+            margin-bottom: 0.2rem;
+        }
+
+        .header .slip-title p {
+            font-size: 0.72rem;
+            color: var(--text-light);
+            text-transform: uppercase;
+        }
+
+        /* Status Badge banner */
+        .status-banner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #F0FDF4;
+            border: 1px solid #DCFCE7;
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .status-banner .amount-box {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .status-banner .amount-box span {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            color: var(--text-gray);
+            letter-spacing: 0.5px;
+        }
+
+        .status-banner .amount-box strong {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--green);
+            font-family: Georgia, serif;
+        }
+
+        .status-banner .badge {
+            background: var(--green);
+            color: white;
+            font-size: 0.7rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            letter-spacing: 1px;
+            box-shadow: 0 2px 4px rgba(21,128,61,0.15);
+        }
+
+        /* Details list layout */
+        .details-section {
+            margin-bottom: 2.2rem;
+        }
+
+        .details-section h2 {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            color: var(--text-light);
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--border-slip);
+            padding-bottom: 0.4rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.6rem 0;
+            font-size: 0.85rem;
+            border-bottom: 1px dashed #F3F4F6;
+        }
+
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .detail-row span.label {
+            color: var(--text-gray);
+        }
+
+        .detail-row span.val {
+            font-weight: 600;
+            color: var(--text-dark);
+            text-align: right;
+        }
+
+        /* Custom image attachment container */
+        .attachment-container {
+            margin-top: 1.8rem;
+            border: 1px solid var(--border-slip);
+            border-radius: 8px;
+            padding: 1rem;
+            background: #F9FAFB;
+        }
+
+        .attachment-container h4 {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            color: var(--text-gray);
+            margin-bottom: 0.6rem;
+            border-bottom: 1px dashed var(--border-slip);
+            padding-bottom: 0.3rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .attachment-img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            border: 1px solid #E5E7EB;
+            display: block;
+            margin: 0 auto;
+            max-height: 350px;
+            object-fit: contain;
+        }
+
+        /* Settlement stamps block */
+        .settlement-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 2.5rem;
+            border-top: 2px solid #F3F4F6;
+            padding-top: 1.8rem;
+        }
+
+        .settlement-footer .legal {
+            max-width: 60%;
+            font-size: 0.62rem;
+            color: var(--text-light);
+            line-height: 1.4;
+        }
+
+        /* Realistic Circular Stamp Graphic */
+        .stamp-box {
+            position: relative;
+            width: 100px;
+            height: 100px;
+            border: 3px double var(--gold-stamp);
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transform: rotate(-12deg);
+            opacity: 0.85;
+            user-select: none;
+            pointer-events: none;
+        }
+
+        .stamp-box::before {
+            content: "SECURED & PAID";
+            font-size: 0.5rem;
+            font-weight: 900;
+            color: var(--gold-stamp);
+            letter-spacing: 0.5px;
+        }
+
+        .stamp-box .stamp-brand {
+            font-family: Georgia, serif;
+            font-size: 0.72rem;
+            font-weight: 800;
+            color: var(--gold-stamp);
+            margin: 1px 0;
+        }
+
+        .stamp-box::after {
+            content: "✓ MONARCH";
+            font-size: 0.55rem;
+            font-weight: 800;
+            color: var(--gold-stamp);
+        }
+
+        /* Print Media Query */
+        @media print {
+            body {
+                background: #FFFFFF;
+                padding: 0;
+            }
+
+            .print-bar {
+                display: none !important;
+            }
+
+            .receipt-container {
+                border: none;
+                box-shadow: none;
+                padding: 0;
+                max-width: 100%;
+                border-radius: 0;
+            }
+
+            .stamp-box {
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Floating Action Print Bar -->
+    <div class="print-bar no-print">
+        <div class="info">
+            <i class="fa-solid fa-file-invoice"></i> Settlement Receipt
+        </div>
+        <button onclick="window.print()" class="btn-print">
+            <i class="fa-solid fa-download"></i> Save or Print Receipt
+        </button>
+    </div>
+
+    <!-- Official Payout Slip -->
+    <div class="receipt-container">
+        
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">Monarch<span>Securities</span></div>
+            <div class="slip-title">
+                <h1>Settlement Receipt</h1>
+                <p>Ref: {{ receipt.receipt_number }}</p>
+            </div>
+        </div>
+
+        <!-- Net Amount Status Banner -->
+        <div class="status-banner">
+            <div class="amount-box">
+                <span>Net Transfer Settled</span>
+                <strong>${{ "%.2f"|format(receipt.get('net_amount', receipt.amount)) }}</strong>
+            </div>
+            <div class="badge">SUCCESSFUL</div>
+        </div>
+
+        <!-- Settlement Account Info -->
+        <div class="details-section">
+            <h2>Transfer Settlement Details</h2>
+            <div class="detail-row">
+                <span class="label">Date & Time of Clearance</span>
+                <span class="val">{{ receipt.date }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Originating Bank</span>
+                <span class="val">Monarch Settlement Clearing Bank</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Origin Account Number</span>
+                <span class="val">*******9401 (Securities Settlement A/C)</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Gross Liquidation Request</span>
+                <span class="val">${{ "%.2f"|format(receipt.amount) }}</span>
+            </div>
+            {% if receipt.get('tax_amount') %}
+            <div class="detail-row">
+                <span class="label">Compliance Tax Withheld</span>
+                <span class="val">${{ "%.2f"|format(receipt.tax_amount) }}</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Beneficiary Info -->
+        <div class="details-section">
+            <h2>Beneficiary Bank Details</h2>
+            <div class="detail-row">
+                <span class="label">Destination Bank Name</span>
+                <span class="val">{{ receipt.bank_name }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Beneficiary Account Name</span>
+                <span class="val">{{ receipt.account_name }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Beneficiary Account Number</span>
+                <span class="val">{{ receipt.account_number }}</span>
+            </div>
+            {% if receipt.admin_notes %}
+            <div class="detail-row" style="border-top: 1px dashed var(--border-slip); margin-top: 0.5rem; padding-top: 0.8rem;">
+                <span class="label">Narrative / Notes</span>
+                <span class="val" style="font-weight: normal; color: var(--text-gray); font-style: italic; max-width: 60%;">{{ receipt.admin_notes }}</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Embedded slip / stamp screenshot if uploaded by admin -->
+        {% if receipt.receipt_image %}
+        <div class="attachment-container">
+            <h4><i class="fa-solid fa-paperclip"></i> Settlement Reference Attachment</h4>
+            <img src="/static/uploads/{{ receipt.receipt_image }}" alt="Settlement Slip Proof" class="attachment-img">
+        </div>
+        {% endif %}
+
+        <!-- Legal Disclaimer & Stamp -->
+        <div class="settlement-footer">
+            <div class="legal">
+                This transaction receipt is generated under the jurisdiction of Monarch Clearing House and our partnered clearing banks. All settlement actions are final. For questions regarding cross-border transaction fees or tax allocations, please contact treasury compliance.
+            </div>
+            
+            <!-- Circular Seal -->
+            <div class="stamp-box">
+                <div class="stamp-brand">MWG</div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>
