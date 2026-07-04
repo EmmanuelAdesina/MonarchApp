@@ -1,0 +1,128 @@
+{% extends "dashboard_base.html" %}
+
+{% set active_page = 'profile' %}
+
+{% block title %}Profile – Monarch Wealth Group{% endblock %}
+
+{% block dashboard_content %}
+<div class="page-header">
+    <h1 class="page-title">Profile</h1>
+    <p class="page-subtitle">Manage your personal information and referral settings</p>
+</div>
+
+<div class="stats-grid">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">👤 Account Information</h3>
+        </div>
+        <div class="card-body" style="display: flex; flex-direction: column; gap: 1rem;">
+            <div class="form-row">
+                <div>
+                    <div class="form-label">Username</div>
+                    <div style="font-size: 1rem; font-weight: 600; color: var(--text-primary);">{{ user.username }}</div>
+                </div>
+                <div>
+                    <div class="form-label">Email</div>
+                    <div style="font-size: 0.9rem; color: var(--text-secondary);">{{ user.email }}</div>
+                </div>
+            </div>
+            <div class="divider"></div>
+            <div>
+                <div class="form-label">Member Since</div>
+                <div style="font-size: 0.9rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.4rem;">
+                    🗓️ {{ user.created_at.strftime('%B %d, %Y') if user.created_at else 'N/A' }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">🔗 Referral Program</h3>
+        </div>
+        <div class="card-body" style="display: flex; flex-direction: column; gap: 1rem;">
+            <div>
+                <div class="form-label">Your Referral Code</div>
+                <div class="input-group">
+                    <input type="text" class="form-input" id="referralCode" value="{{ user.referral_code or '—' }}" readonly style="font-family: var(--font-mono); font-size: 1.1rem; font-weight: 600; letter-spacing: 1px;">
+                    <button class="btn btn-primary" onclick="copyReferralCode()" id="copyBtn">📋 Copy</button>
+                </div>
+            </div>
+            <div>
+                <div class="form-label">Referral Earnings</div>
+                <div style="font-family: var(--font-serif); font-size: 1.6rem; font-weight: 700; color: var(--gold);">
+                    ${{ "%.2f"|format(user.referral_earnings or 0) }}
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-tertiary); margin-top: 0.2rem;">
+                    Earned by referring new members
+                </div>
+            </div>
+            {% if user.mentor_id %}
+            <div class="divider"></div>
+            <div>
+                <div class="form-label">Referred By (Mentor ID)</div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary); font-family: var(--font-mono);">{{ user.mentor_id }}</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 1rem;">
+    <div class="card-header">
+        <h3 class="card-title">💼 Earnings Summary</h3>
+    </div>
+    <div class="card-body">
+        <div class="stats-grid" style="margin-bottom: 0;">
+            <div class="stat-card">
+                <div class="stat-label">Total Deposits</div>
+                <div class="stat-value">${{ "%.2f"|format(user.total_deposits or 0) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Current Balance</div>
+                <div class="stat-value" style="color: var(--gold);">${{ "%.2f"|format(user.balance or 0) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Referral Earnings</div>
+                <div class="stat-value" style="color: var(--green);">${{ "%.2f"|format(user.referral_earnings or 0) }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyReferralCode() {
+    const input = document.getElementById('referralCode');
+    const btn = document.getElementById('copyBtn');
+    input.select();
+    input.setSelectionRange(0, 99999);
+    try {
+        navigator.clipboard.writeText(input.value).then(() => {
+            btn.textContent = '✅ Copied!';
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-secondary');
+            setTimeout(() => {
+                btn.textContent = '📋 Copy';
+                btn.classList.remove('btn-secondary');
+                btn.classList.add('btn-primary');
+            }, 2000);
+        }).catch(() => {
+            document.execCommand('copy');
+            btn.textContent = '✅ Copied!';
+            setTimeout(() => {
+                btn.textContent = '📋 Copy';
+            }, 2000);
+        });
+    } catch(e) {
+        document.execCommand('copy');
+        btn.textContent = '✅ Copied!';
+        setTimeout(() => {
+            btn.textContent = '📋 Copy';
+        }, 2000);
+    }
+}
+</script>
+{% endblock %}

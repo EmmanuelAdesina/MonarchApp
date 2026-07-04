@@ -1,689 +1,329 @@
-{% extends "base.html" %}
+{# templates/dashboard.html — Premium Fintech Dashboard #}
+{% extends "dashboard_base.html" %}
 
 {% block title %}Dashboard – Monarch Wealth Group{% endblock %}
 
-{% block content %}
-<div class="dashboard-page">
-    <div class="dashboard-top">
-        <div class="dashboard-brand">
-            <div class="brand-title">⚜ Monarch Wealth Group</div>
-            <div class="brand-subtitle">Premium portfolio management for ambitious members</div>
-        </div>
+{% block dashboard_content %}
 
-        <div class="dashboard-meta">
-            <div class="user-signal">
-                <span class="online-dot"></span>
-                <span>Online Now</span>
+<!-- ============================================================ -->
+<!-- 1. STATS GRID (4 stat-cards)                                 -->
+<!-- ============================================================ -->
+<div class="stats-grid" id="statsGrid">
+    <!-- Portfolio Value -->
+    <div class="stat-card">
+        <div class="stat-label">Portfolio Value</div>
+        <div class="stat-value" id="portfolioValue">${{ user.balance|default(0)|round(2) }}</div>
+        <div class="stat-change positive" id="todayGain">+$0.00</div>
+    </div>
+    <!-- Total Deposits -->
+    <div class="stat-card">
+        <div class="stat-label">Total Deposits</div>
+        <div class="stat-value" id="invested">${{ user.total_deposits|default(0)|round(2) }}</div>
+        <div class="stat-change positive">Total Invested</div>
+    </div>
+    <!-- Profit / ROI -->
+    <div class="stat-card">
+        <div class="stat-label">Profit / ROI</div>
+        <div class="stat-value" id="profit">$0.00</div>
+        <div class="stat-change positive" id="profitChange">+0.0%</div>
+    </div>
+    <!-- Today's Growth -->
+    <div class="stat-card">
+        <div class="stat-label">Today's Growth</div>
+        <div class="stat-value" id="roiDisplay">+0.0%</div>
+        <div class="stat-change positive" id="todayPercent">+0.0%</div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 2. QUICK ACTIONS (2×2 grid)                                   -->
+<!-- ============================================================ -->
+<div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header">
+        <div class="card-title">Quick Actions</div>
+    </div>
+    <div class="card-body">
+        <div class="grid-2" style="margin-top:0.5rem;">
+            <a href="{{ url_for('dashboard.deposit') }}" class="btn btn-primary btn-lg btn-block" style="padding:1.2rem;justify-content:center;gap:10px;">
+                <span style="font-size:1.4rem;">$</span> Deposit
+            </a>
+            <a href="{{ url_for('dashboard.withdraw') }}" class="btn btn-secondary btn-lg btn-block" style="padding:1.2rem;justify-content:center;gap:10px;">
+                <span style="font-size:1.4rem;">↗</span> Withdraw
+            </a>
+            <a href="{{ url_for('dashboard.new_application') if 'new_application' in url_for.__globals__ else '#' }}" class="btn btn-secondary btn-lg btn-block" style="padding:1.2rem;justify-content:center;gap:10px;">
+                <span style="font-size:1.4rem;">📋</span> New Application
+            </a>
+            <a href="{{ url_for('dashboard.support') }}" class="btn btn-ghost btn-lg btn-block" style="padding:1.2rem;justify-content:center;gap:10px;border:1px solid var(--border-primary);">
+                <span style="font-size:1.4rem;">🛟</span> Support
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 3. PORTFOLIO HOLDINGS + PERFORMANCE CHART                      -->
+<!-- ============================================================ -->
+<div class="grid-2" style="margin-bottom:1.5rem;">
+    <!-- Holdings -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Portfolio Holdings</div>
+        </div>
+        <div class="card-body" id="holdingsList">
+            <!-- Populated by JS -->
+            <div class="empty-state" style="padding:1.5rem;">
+                <div class="empty-state-text">Loading holdings…</div>
             </div>
-            <div class="user-activity">
-                <button class="notification-pill" type="button">🔔 <span id="notificationCount">3</span></button>
-                <div class="avatar-large">{{ user.username[0]|upper }}</div>
+        </div>
+    </div>
+    <!-- Performance Chart -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Performance</div>
+            <div class="tabs" id="periodToggle" style="gap:0;">
+                <button class="tab active" data-period="7">7D</button>
+                <button class="tab" data-period="30">1M</button>
+                <button class="tab" data-period="90">3M</button>
+                <button class="tab" data-period="365">1Y</button>
+            </div>
+        </div>
+        <div class="card-body">
+            <svg id="performanceChart" viewBox="0 0 320 160" style="width:100%;height:auto;max-height:160px;"></svg>
+            <div style="display:flex;gap:1rem;margin-top:0.8rem;font-size:0.75rem;color:var(--text-tertiary);">
+                <span>Return: <strong id="chartReturn" class="text-green">+0.0%</strong></span>
+                <span>Volatility: <strong id="volatilityLabel">Low</strong></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 4. RECENT ACTIVITY (live feed container)                     -->
+<!-- ============================================================ -->
+<div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header">
+        <div class="card-title">Recent Activity</div>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+            <button id="pauseToggle" class="btn btn-sm btn-ghost" style="font-size:0.7rem;">⏸ Pause Updates</button>
+            <button id="soundToggle" class="btn btn-sm btn-ghost" style="font-size:0.7rem;">🔊 Enable Sound</button>
+        </div>
+    </div>
+    <div class="card-body" id="dashFeed" style="min-height:80px;">
+        <!-- Populated by JS -->
+        <div class="empty-state" style="padding:1rem;">
+            <div class="empty-state-text">Loading activity feed…</div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 5. AI ADVISOR PREVIEW (Sarah Mitchell)                       -->
+<!-- ============================================================ -->
+<div class="card" style="margin-bottom:1.5rem;background:linear-gradient(135deg,rgba(200,168,94,0.06),transparent);border-color:var(--border-gold);">
+    <div class="card-body" style="display:flex;align-items:center;gap:1rem;cursor:pointer;" onclick="openAdvisorChat()">
+        <div style="width:56px;height:56px;border-radius:50%;background:var(--gold-dim);border:2px solid var(--gold);flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+            <span style="font-size:1.6rem;color:var(--gold);">👤</span>
+        </div>
+        <div style="flex:1;">
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+                <div class="font-serif" style="font-size:1rem;font-weight:600;color:var(--text-primary);" id="advisorName">Sarah Mitchell</div>
+                <span id="chatUnreadBadge" class="badge badge-gold" style="display:none;font-size:0.55rem;">New</span>
+            </div>
+            <div style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.15rem;" id="advisorTitle">Wealth Advisor · 12 yrs</div>
+            <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.3rem;display:flex;align-items:center;gap:0.4rem;">
+                <span id="advisorLastMessage">Your portfolio is performing well. Let's discuss your growth strategy.</span>
+                <span style="color:var(--gold);font-size:0.7rem;">→</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 6. STATUS BANNERS (withdrawal status)                        -->
+<!-- ============================================================ -->
+<div id="statusBannersContainer" style="display:flex;flex-direction:column;gap:0.8rem;margin-bottom:1.5rem;">
+
+    <!-- Tax Required -->
+    <div id="taxRequiredStatusCard" class="status-card tax-required" style="display:none;">
+        <div class="status-icon">⚠️</div>
+        <div class="status-body">
+            <div class="status-title">Tax Payment Required</div>
+            <div class="status-text">
+                Your withdrawal of <strong id="unpaidAmountDisplay">$0.00</strong> requires a
+                <strong id="unpaidTaxDisplay">$0.00</strong> tax payment before processing.
+            </div>
+            <div class="status-sub">
+                <button onclick="resumeTaxPayment()" class="btn btn-sm btn-primary" style="margin-top:0.4rem;">Pay Tax Now</button>
             </div>
         </div>
     </div>
 
-    <div class="dashboard-nav">
-        <a href="#" class="active">Dashboard</a>
-        <a href="#">Portfolio</a>
-        <a href="#">Deals</a>
-        <a href="#">Vault</a>
-        <a href="#">Settings</a>
+    <!-- Pending -->
+    <div id="pendingStatusCard" class="status-card pending" style="display:none;">
+        <div class="status-icon">⏳</div>
+        <div class="status-body">
+            <div class="status-title">Withdrawal Processing</div>
+            <div class="status-text">
+                Your withdrawal of <strong id="pendingAmountDisplay">$0.00</strong> is being processed.
+                Funds will be sent within 3–5 business days.
+            </div>
+            <div class="status-sub">Status: <span class="badge badge-info">Pending</span></div>
+        </div>
     </div>
 
-    <div id="statusBanners" class="status-banners">
-        <div class="withdrawal-status tax-required" id="taxRequiredStatusCard">
-            <div class="status-icon">⚠️</div>
-            <div class="status-details">
-                <h4>Tax Verification Required</h4>
-                <p>To process your withdrawal of <strong id="unpaidAmountDisplay">$0.00</strong>, a 20% compliance tax is required.</p>
-                <p class="sub">Pay <strong id="unpaidTaxDisplay">$0.00</strong> now to continue.</p>
-                <button class="btn-gold" onclick="resumeTaxPayment()">⚖️ Pay Compliance Tax</button>
+    <!-- Completed -->
+    <div id="completedStatusCard" class="status-card completed" style="display:none;">
+        <div class="status-icon">✅</div>
+        <div class="status-body">
+            <div class="status-title">Withdrawal Completed</div>
+            <div class="status-text">
+                Your withdrawal of <strong id="completedAmountDisplay">$0.00</strong> has been completed.
             </div>
-        </div>
-
-        <div class="withdrawal-status pending" id="withdrawalStatusCard">
-            <div class="status-icon">⏳</div>
-            <div class="status-details">
-                <h4>Withdrawal Processing</h4>
-                <p>Your withdrawal of <strong id="pendingAmountDisplay">$0.00</strong> is currently pending.</p>
-                <p class="sub">Estimated completion: 3-5 business days.</p>
-                <div class="status-bar">
-                    <div class="progress"></div>
-                </div>
-                <small>Processing time may vary due to compliance checks.</small>
-            </div>
-        </div>
-
-        <!-- Crypto Wallet Setup Panel -->
-        <div class="withdrawal-status pending bank-details-card" id="bankDetailsFormCard" style="display:none; flex-direction:column; gap:1rem; border-color: rgba(200, 168, 94, 0.25); width:100%; background: var(--bg-card); padding: 1.5rem; border-radius: 16px;">
-            <div style="display: flex; gap: 0.8rem; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.8rem; width:100%;">
-                <div class="status-icon" style="font-size: 1.5rem;">🔐</div>
-                <div class="status-details">
-                    <h4 style="font-size: 1rem; color: var(--gold); font-family: var(--font-serif); margin-bottom:0.15rem;">PAYOUT – CRYPTO WALLET SETUP</h4>
-                    <p style="font-size: 0.76rem; color: var(--text-dim); margin-top: 0.2rem;">To receive your withdrawal of <strong id="bankDetailsWithdrawAmount" style="color: var(--text);">$0.00</strong>, please provide your crypto wallet address. Payouts are sent exclusively via blockchain transfer.</p>
-                </div>
-            </div>
-
-            <form id="bankDetailsForm" onsubmit="submitCryptoWalletForm(event)" style="display: flex; flex-direction: column; gap: 0.8rem; width:100%;">
-                <div class="bank-form-grid">
-                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-                        <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Crypto Currency *</label>
-                        <select id="userCryptoCurrency" onchange="updateNetworkOptions()" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none; cursor: pointer;">
-                            <option value="USDT">USDT – Tether</option>
-                            <option value="BTC">BTC – Bitcoin</option>
-                            <option value="ETH">ETH – Ethereum</option>
-                            <option value="BNB">BNB – Binance Coin</option>
-                            <option value="TRX">TRX – TRON</option>
-                        </select>
-                    </div>
-                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-                        <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Network *</label>
-                        <select id="userCryptoNetwork" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none; cursor: pointer;">
-                            <option value="TRC-20">TRC-20 (TRON)</option>
-                            <option value="ERC-20">ERC-20 (Ethereum)</option>
-                            <option value="BEP-20">BEP-20 (BNB Chain)</option>
-                            <option value="BTC">BTC (Native)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-                    <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Wallet Address *</label>
-                    <input type="text" id="userWalletAddress" required placeholder="e.g. TXyz123... or 0xAbc..." style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none; font-family: monospace; font-size: 0.8rem;">
-                    <span style="font-size: 0.65rem; color: var(--text-faint);">⚠️ Double-check your address. Incorrect addresses result in permanent loss of funds.</span>
-                </div>
-
-                <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-                    <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Confirm Wallet Address *</label>
-                    <input type="text" id="userConfirmWalletAddress" required placeholder="Re-enter wallet address" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none; font-family: monospace; font-size: 0.8rem;">
-                </div>
-
-                <div style="display:flex; justify-content: space-between; align-items: center; margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem; flex-wrap:wrap; gap:0.5rem;">
-                    <span style="font-size: 0.65rem; color: var(--text-faint);">🔒 Wallet info is encrypted and used only for payouts.</span>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <button type="button" class="btn-ghost" onclick="cancelBankDetailsForm()" style="padding: 0.55rem 1rem;">Cancel</button>
-                        <button type="submit" class="btn-gold" id="btnSubmitBankDetails" style="padding: 0.55rem 1rem; width: auto;">Save Wallet & Continue →</button>
-                    </div>
-                </div>
-            </form>
-        </div>
-            <div style="display: flex; gap: 0.8rem; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.8rem; width:100%;">
-                <div class="status-icon" style="font-size: 1.5rem;">💸</div>
-                <div class="status-details">
-                    <h4 style="font-size: 1rem; color: var(--gold); font-family: var(--font-serif); margin-bottom:0.15rem;">WITHDRAWAL – BANKING DETAILS</h4>
-                    <p style="font-size: 0.76rem; color: var(--text-dim); margin-top: 0.2rem;">To process your withdrawal of <strong id="bankDetailsWithdrawAmount" style="color: var(--text);">$0.00</strong>, please provide your banking details below. This information is required for fund transfer.</p>
-                </div>
-            </div>
-            
-            <form id="bankDetailsForm" onsubmit="submitBankDetailsForm(event)" style="display: flex; flex-direction: column; gap: 0.8rem; width:100%;">
-                <div class="bank-form-grid">
-                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-                        <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Bank Name *</label>
-                        <input type="text" id="userBankName" required placeholder="e.g. Chase Bank" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none;">
-                    </div>
-                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-                        <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Account Holder Name *</label>
-                        <input type="text" id="userAccountName" required placeholder="e.g. John Doe" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none;">
-                    </div>
-                </div>
-
-                <div class="bank-form-grid">
-                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-                        <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Account Number *</label>
-                        <input type="text" id="userAccountNumber" required placeholder="e.g. 1234567890" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none;">
-                    </div>
-                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-                        <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Confirm Account Number *</label>
-                        <input type="text" id="userConfirmAccountNumber" required placeholder="e.g. 1234567890" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none;">
-                    </div>
-                </div>
-
-                <div class="bank-form-grid">
-                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-                        <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Routing Number *</label>
-                        <input type="text" id="userRoutingNumber" required placeholder="e.g. 021000021" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none;">
-                    </div>
-                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-                        <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Swift Code (Optional)</label>
-                        <input type="text" id="userSwiftCode" placeholder="e.g. CHASUS33" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none;">
-                    </div>
-                </div>
-
-                <div class="bank-form-grid">
-                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-                        <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Country</label>
-                        <select id="userCountry" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none; cursor: pointer;">
-                            <option value="United States">United States</option>
-                            <option value="United Kingdom">United Kingdom</option>
-                            <option value="Canada">Canada</option>
-                            <option value="Germany">Germany</option>
-                            <option value="South Africa">South Africa</option>
-                            <option value="Nigeria">Nigeria</option>
-                        </select>
-                    </div>
-                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-                        <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Currency</label>
-                        <select id="userCurrency" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none; cursor: pointer;">
-                            <option value="USD">USD</option>
-                            <option value="GBP">GBP</option>
-                            <option value="EUR">EUR</option>
-                            <option value="CAD">CAD</option>
-                            <option value="ZAR">ZAR</option>
-                            <option value="NGN">NGN</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div style="display:flex; justify-content: space-between; align-items: center; margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem; flex-wrap:wrap; gap:0.5rem;">
-                    <span style="font-size: 0.65rem; color: var(--text-faint);">🔒 Your banking information is encrypted and secure.</span>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <button type="button" class="btn-ghost" onclick="cancelBankDetailsForm()" style="padding: 0.55rem 1rem;">Cancel</button>
-                        <button type="submit" class="btn-gold" id="btnSubmitBankDetails" style="padding: 0.55rem 1rem; width: auto;">Submit & Process Withdrawal →</button>
-                    </div>
-                </div>
-            </form>
-        </div>
-
-        <!-- Withdrawal completed status card -->
-        <div class="withdrawal-status completed" id="completedStatusCard" style="display:none; border-color: rgba(74, 222, 128, 0.25);">
-            <div class="status-icon">✅</div>
-            <div class="status-details">
-                <h4>Withdrawal Completed!</h4>
-                <p>Your withdrawal of <strong id="completedAmountDisplay">$0.00</strong> has been approved and processed.</p>
-                <p class="sub">Funds have been sent to your crypto wallet on the <strong id="completedNetworkDisplay">—</strong> network. Blockchain settlement typically takes 10–30 minutes.</p>
-                <div style="display: flex; gap: 0.5rem; margin-top: 0.8rem; flex-wrap: wrap;">
-                    <button class="btn-gold" id="completedReceiptBtn" style="width: auto; padding: 0.4rem 0.8rem; font-size: 0.72rem;">📄 Download Receipt</button>
-                    <button class="btn-ghost" onclick="dismissCompletedBanner()" style="padding: 0.4rem 0.8rem; font-size: 0.72rem;">Dismiss</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Withdrawal rejected status card -->
-        <div class="withdrawal-status rejected" id="rejectedStatusCard" style="display:none; border-color: rgba(239, 68, 68, 0.25);">
-            <div class="status-icon">⛔</div>
-            <div class="status-details">
-                <h4>Withdrawal Declined</h4>
-                <p>Your withdrawal of <strong id="rejectedAmountDisplay">$0.00</strong> was declined by compliance auditors.</p>
-                <p class="sub">Reason: <strong id="rejectedReasonDisplay" style="color:var(--text-dim);">No reason provided.</strong></p>
-                <div style="display: flex; gap: 0.5rem; margin-top: 0.8rem;">
-                    <button class="btn-ghost" onclick="dismissRejectedBanner()" style="padding: 0.4rem 0.8rem; font-size: 0.72rem;">Dismiss</button>
-                </div>
+            <div class="status-sub" style="display:flex;gap:0.6rem;margin-top:0.4rem;">
+                <button id="completedReceiptBtn" class="btn btn-sm btn-secondary">📄 View Receipt</button>
+                <button onclick="dismissCompletedBanner()" class="btn btn-sm btn-ghost">Dismiss</button>
             </div>
         </div>
     </div>
 
-    <div id="homeView">
-        <section class="hero-card">
-            <div class="hero-head">
-                <div>
-                    <div class="hero-label">Portfolio Value</div>
-                    <div class="hero-title"><span class="currency">$</span><span id="portfolioValue">{{ "%.2f"|format(user.balance) }}</span></div>
-                    <div class="hero-sub">Today's gain: <span class="gain" id="todayGain">+$0.00</span> · <span id="todayPercent">+0.0%</span></div>
-                </div>
-                <div class="hero-performance-chip">Outperforming <strong id="peerPerformance">89%</strong> of members</div>
+    <!-- Rejected -->
+    <div id="rejectedStatusCard" class="status-card rejected" style="display:none;">
+        <div class="status-icon">❌</div>
+        <div class="status-body">
+            <div class="status-title">Withdrawal Rejected</div>
+            <div class="status-text">
+                Your withdrawal of <strong id="rejectedAmountDisplay">$0.00</strong> was rejected.
             </div>
-
-            <div class="hero-mini-stats">
-                <div class="hero-stat">
-                    <div class="stat-label">Invested</div>
-                    <div class="stat-value" id="invested">${{ "%.2f"|format(user.total_deposits) }}</div>
-                </div>
-                <div class="hero-stat">
-                    <div class="stat-label">Profit</div>
-                    <div class="stat-value" id="profit">$0.00</div>
-                </div>
-                <div class="hero-stat">
-                    <div class="stat-label">ROI</div>
-                    <div class="stat-value" id="roiDisplay">+0.0%</div>
-                </div>
-                <div class="hero-stat">
-                    <div class="stat-label">Yield</div>
-                    <div class="stat-value" id="yieldDisplay">14.2%</div>
-                </div>
+            <div class="status-text" style="margin-top:0.3rem;">
+                Reason: <span id="rejectedReasonDisplay">Failed compliance audit.</span>
             </div>
-
-            <div class="performance-indicator">
-                <span class="indicator active"></span>
-                <span class="indicator active"></span>
-                <span class="indicator active"></span>
-                <span class="indicator active"></span>
-                <span class="indicator"></span>
-            </div>
-        </section>
-
-        <section class="performance-section">
-            <div class="section-head">
-                <div>
-                    <div class="section-title">📈 Performance Overview</div>
-                    <div class="section-caption">Built with real-time account momentum</div>
-                </div>
-                <div class="period-toggle" id="periodToggle">
-                    <button data-period="7" class="active">1W</button>
-                    <button data-period="30">1M</button>
-                    <button data-period="90">3M</button>
-                    <button data-period="365">1Y</button>
-                </div>
-            </div>
-
-            <div class="performance-graphic">
-                <svg id="performanceChart" viewBox="0 0 320 160" preserveAspectRatio="none"></svg>
-            </div>
-
-            <div class="performance-meta">
-                <span class="meta-pill" id="chartReturn">+0.0%</span>
-                <span class="meta-pill">Volatility: <strong id="volatilityLabel">Low</strong></span>
-            </div>
-        </section>
-
-        <section class="holdings-section">
-            <div class="section-head">
-                <div class="section-title">💼 Portfolio Holdings</div>
-                <a href="#" class="view-all">View All →</a>
-            </div>
-            <div class="holdings-grid" id="holdingsList"></div>
-        </section>
-
-        <section class="action-section">
-            <div class="section-head">
-                <div class="section-title">⚡ Quick Actions</div>
-            </div>
-            <div class="action-grid">
-                <button class="action-card action-deposit" onclick="openDepositModal()">
-                    <div>💰 Deposit</div>
-                    <small>Start growing</small>
-                </button>
-                <button class="action-card action-withdraw" onclick="showWithdrawView()">
-                    <div>💸 Withdraw</div>
-                    <small>Access earnings</small>
-                </button>
-                <button class="action-card action-neutral" onclick="alert('Rebalance is a premium optimization tool.');">
-                    <div>📊 Rebalance</div>
-                    <small>Optimize holdings</small>
-                </button>
-                <button class="action-card action-neutral" onclick="alert('Vault access is coming soon.');">
-                    <div>🏦 Vault</div>
-                    <small>Secure documents</small>
-                </button>
-            </div>
-        </section>
-
-        <section class="trust-section">
-            <div class="section-head">
-                <div class="section-title">🔒 Platform Status</div>
-            </div>
-            <div class="trust-grid">
-                <div class="trust-card">
-                    <span>✅</span>
-                    <div>
-                        <strong>All systems operational</strong>
-                        <small>Live sync active</small>
-                    </div>
-                </div>
-                <div class="trust-card">
-                    <span>🔐</span>
-                    <div>
-                        <strong>Encrypted connection</strong>
-                        <small>256-bit SSL</small>
-                    </div>
-                </div>
-                <div class="trust-card">
-                    <span>🏛️</span>
-                    <div>
-                        <strong>SEC-style diligence</strong>
-                        <small>Institutional-ready</small>
-                    </div>
-                </div>
-                <div class="trust-card">
-                    <span>🛡️</span>
-                    <div>
-                        <strong>Capital protection</strong>
-                        <small>Layered security</small>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section class="withdrawal-status-section">
-            <div class="section-head">
-                <div class="section-title">📁 Completed Payout Receipts</div>
-            </div>
-            <div id="receiptsList">
-                <!-- Populated by JS -->
-            </div>
-        </section>
-
-        <section class="live-feed-section">
-            <div class="section-head">
-                <div class="section-title">📡 Live Activity Feed</div>
-                <div class="feed-controls">
-                    <button id="soundToggle" class="pill-button active">🔊 Enable Sound</button>
-                    <button id="pauseToggle" class="pill-button">⏸ Pause Updates</button>
-                </div>
-            </div>
-            <div id="dashFeed" class="feed-list"></div>
-        </section>
-
-        <!-- ═══════════════════════════════════════════ -->
-        <!-- AI WEALTH ADVISOR CARD                       -->
-        <!-- ═══════════════════════════════════════════ -->
-        <section style="margin-bottom: 1.5rem;">
-            <div class="section-head">
-                <div class="section-title">👩‍💼 Your Wealth Advisor</div>
-                <button id="openChatBtn" onclick="openAdvisorChat()" style="background: rgba(200,168,94,0.1); border: 1px solid rgba(200,168,94,0.3); color: var(--gold); padding: 0.35rem 0.8rem; border-radius: 20px; font-size: 0.72rem; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; transition: all 0.2s;">
-                    <span id="chatUnreadBadge" style="display:none; background: #EF4444; color: white; border-radius: 50%; width: 16px; height: 16px; font-size: 0.6rem; align-items: center; justify-content: center;">!</span>
-                    💬 Message
-                </button>
-            </div>
-            <div style="background: var(--bg-card); border: 1px solid var(--border-gold); border-radius: 16px; padding: 1.2rem; display: flex; gap: 1rem; align-items: center; position: relative; overflow: hidden;">
-                <div style="position: absolute; top: 0; right: 0; width: 120px; height: 120px; background: radial-gradient(circle at top right, rgba(200,168,94,0.08), transparent); pointer-events: none;"></div>
-                <div style="position: relative; flex-shrink: 0;">
-                    <img id="advisorPhoto" src="/static/uploads/sarah_mitchell.jpg" alt="Sarah Mitchell" style="width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid var(--gold); box-shadow: 0 0 15px rgba(200,168,94,0.3);" onerror="this.style.display='none'; document.getElementById('advisorInitials').style.display='flex';">
-                    <div id="advisorInitials" style="display:none; width: 64px; height: 64px; border-radius: 50%; background: var(--gold); color: var(--bg); font-size: 1.4rem; font-weight: 700; align-items: center; justify-content: center; border: 2px solid var(--gold);">S</div>
-                    <span style="position: absolute; bottom: 2px; right: 2px; width: 12px; height: 12px; background: #10B981; border-radius: 50%; border: 2px solid var(--bg-card); display: block;"></span>
-                </div>
-                <div style="flex: 1; min-width: 0;">
-                    <div style="font-weight: 600; color: var(--text); font-size: 0.95rem;" id="advisorName">Sarah Mitchell</div>
-                    <div style="font-size: 0.72rem; color: var(--gold); margin-bottom: 0.5rem;" id="advisorTitle">Senior Wealth Advisor · 8 Years Experience</div>
-                    <div id="advisorLastMessage" style="font-size: 0.78rem; color: var(--text-dim); line-height: 1.4; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Loading message…</div>
-                </div>
-                <button onclick="openAdvisorChat()" style="flex-shrink: 0; background: var(--gold); color: var(--bg); border: none; border-radius: 10px; padding: 0.5rem 0.8rem; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">Chat →</button>
-            </div>
-        </section>
-
-        <div class="mobile-nav-placeholder"></div>
-    </div>
-
-    <!-- ═══════════════════════════════════════════ -->
-    <!-- AI ADVISOR CHAT DRAWER                       -->
-    <!-- ═══════════════════════════════════════════ -->
-    <div id="advisorChatDrawer" style="display:none; position:fixed; bottom:0; right:0; width:100%; max-width:400px; height:70vh; background:#111827; border-radius:20px 20px 0 0; border: 1px solid rgba(200,168,94,0.25); box-shadow: 0 -10px 40px rgba(0,0,0,0.5); z-index:1000; flex-direction:column; overflow:hidden;">
-        <!-- Drawer Header -->
-        <div style="padding: 1rem 1.2rem; background: linear-gradient(135deg, rgba(200,168,94,0.15), rgba(200,168,94,0.05)); border-bottom: 1px solid rgba(200,168,94,0.15); display: flex; align-items: center; gap: 0.8rem;">
-            <img src="/static/uploads/sarah_mitchell.jpg" alt="Advisor" style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1.5px solid var(--gold);" onerror="this.style.display='none'">
-            <div style="flex: 1;">
-                <div style="font-weight: 600; color: var(--text); font-size: 0.9rem;">Sarah Mitchell</div>
-                <div style="font-size: 0.65rem; color: #10B981;">● Online Now</div>
-            </div>
-            <button onclick="closeAdvisorChat()" style="background: none; border: none; color: var(--text-dim); font-size: 1.3rem; cursor: pointer; padding: 0.2rem 0.5rem; border-radius: 6px; transition: color 0.2s;" onmouseover="this.style.color='var(--gold)'" onmouseout="this.style.color='var(--text-dim)'">✕</button>
-        </div>
-        <!-- Messages Area -->
-        <div id="chatMessages" style="flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem; scroll-behavior: smooth;">
-            <div style="text-align: center; color: var(--text-faint); font-size: 0.72rem; padding: 0.5rem;">Loading conversation…</div>
-        </div>
-        <!-- Input Area -->
-        <div style="padding: 0.8rem 1rem; border-top: 1px solid rgba(255,255,255,0.06); display: flex; gap: 0.6rem; align-items: center;">
-            <input type="text" id="chatInput" placeholder="Message Sarah…" maxlength="500"
-                style="flex: 1; padding: 0.65rem 0.9rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 20px; color: var(--text); font-size: 0.85rem; outline: none;"
-                onkeypress="if(event.key==='Enter') sendChatMessage()">
-            <button onclick="sendChatMessage()" style="background: var(--gold); border: none; border-radius: 50%; width: 36px; height: 36px; color: var(--bg); font-size: 1rem; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">➤</button>
-        </div>
-    </div>
-    <!-- Chat Backdrop -->
-    <div id="chatBackdrop" onclick="closeAdvisorChat()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:999;"></div>
-
-    <div class="bottom-nav" id="mobileBottomNav">
-        <button class="nav-item active" data-nav="home" id="navHome" onclick="setBottomNav('home')">
-            <span>🏠</span>
-            <small>Home</small>
-        </button>
-        <button class="nav-item" data-nav="portfolio" onclick="setBottomNav('portfolio')">
-            <span>📊</span>
-            <small>Portfolio</small>
-        </button>
-        <button class="nav-item action-deposit-btn" onclick="openDepositModal()">
-            <span>💰</span>
-            <small>Deposit</small>
-        </button>
-        <button class="nav-item" data-nav="vault" onclick="alert('Vault access is coming soon.')">
-            <span>🏦</span>
-            <small>Vault</small>
-        </button>
-        <button class="nav-item" data-nav="profile" onclick="alert('Profile management is in progress.')">
-            <span>👤</span>
-            <small>Profile</small>
-        </button>
-    </div>
-    <div class="withdrawal-container" id="withdrawalContainer" style="display:none;">
-        <h2>💸 Withdraw Funds</h2>
-        <div class="balance-display">
-            Available Balance: <span class="gold" id="withdrawAvailableBalance">${{ "%.2f"|format(user.balance) }}</span>
-        </div>
-
-        <!-- Wallet Check Banner -->
-        <div id="walletMissingBanner" style="display:none; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:10px; padding:0.9rem 1rem; margin-bottom:1rem; font-size:0.8rem; color:#F87171;">
-            ⚠️ <strong>No crypto wallet set.</strong> You must save a payout wallet address before requesting a withdrawal.
-            <button onclick="showWalletSetupFromWithdrawal()" style="margin-left:0.6rem; background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.4); color:#F87171; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer; font-size:0.75rem;">Set Wallet →</button>
-        </div>
-
-        <!-- Cycle Info -->
-        <div id="cycleInfoBanner" style="background:rgba(200,168,94,0.07); border:1px solid rgba(200,168,94,0.2); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1rem; font-size:0.78rem; color:var(--text-dim); display:flex; gap:0.6rem; align-items:center;">
-            <span>📅</span>
-            <span>Withdrawal requests accepted <strong style="color:var(--text);">1st–25th</strong> each month. Payouts sent on the <strong style="color:var(--gold);">last day</strong> of the month.</span>
-        </div>
-
-        <!-- Wallet Info (shown when set) -->
-        <div id="walletInfoBanner" style="display:none; background:rgba(16,185,129,0.07); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1rem; font-size:0.78rem; color:var(--text-dim); display:flex; gap:0.6rem; align-items:center; justify-content:space-between;">
-            <div style="display:flex; gap:0.6rem; align-items:center;">
-                <span>🔐</span>
-                <div>
-                    <div style="color: #10B981; font-weight:600; font-size:0.72rem;">Payout Wallet Set</div>
-                    <div id="walletAddressPreview" style="font-family:monospace; font-size:0.7rem;">—</div>
-                </div>
-            </div>
-            <button onclick="showWalletSetupFromWithdrawal()" style="background:none; border:1px solid rgba(16,185,129,0.3); color:#10B981; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer; font-size:0.7rem;">Edit</button>
-        </div>
-
-        <div class="withdrawal-form">
-            <div class="form-group">
-                <label>Amount to Withdraw <span style="color:var(--text-faint); font-size:0.72rem;">(Minimum $1,000)</span></label>
-                <div class="input-wrapper">
-                    <input type="number" id="withdrawAmount" min="1000" max="{{ user.balance }}" step="10" placeholder="Min. $1,000" oninput="calculateBreakdown()">
-                    <button class="btn-max" onclick="setMaxAmount()">Max</button>
-                </div>
-            </div>
-
-            <!-- Eligibility Progress Bar -->
-            <div id="eligibilityBar" style="margin-bottom:0.8rem; display:none;">
-                <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-faint); margin-bottom:0.3rem;">
-                    <span>Withdrawal Eligibility</span>
-                    <span id="eligibilityPercent">0%</span>
-                </div>
-                <div style="height:6px; background:rgba(255,255,255,0.06); border-radius:4px; overflow:hidden;">
-                    <div id="eligibilityFill" style="height:100%; width:0%; background: linear-gradient(90deg, #C8A85E, #10B981); border-radius:4px; transition: width 0.5s ease;"></div>
-                </div>
-                <div style="font-size:0.65rem; color:var(--text-faint); margin-top:0.25rem;" id="eligibilityNote"></div>
-            </div>
-
-            <div class="breakdown">
-                <div class="row">
-                    <span>Withdrawal Amount</span>
-                    <span id="displayAmount">$0.00</span>
-                </div>
-                <div class="row tax-row">
-                    <span>Processing Tax (20%)</span>
-                    <span id="displayTax">$0.00</span>
-                </div>
-                <div class="row total-row">
-                    <span>Net Payout (Crypto)</span>
-                    <span id="displayNet">$0.00</span>
-                </div>
-            </div>
-            <div class="info-box">
-                <i class="fas fa-info-circle"></i>
-                <small>A 20% compliance tax is required before crypto payout. This covers cross-border regulatory fees and is non-refundable.</small>
-            </div>
-            <button class="btn-gold" onclick="requestWithdrawal()" disabled id="withdrawBtn">
-                Request Withdrawal →
-            </button>
-        </div>
-    </div>
-
-    <!-- Deposit Modal -->
-    <div id="depositModal"
-        style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:999; align-items:center; justify-content:center;">
-        <div
-            style="background:#111827; padding:2rem; border-radius:16px; max-width:400px; width:90%; text-align:center; border:1px solid rgba(201,168,76,0.2);">
-            <h3 style="color:var(--gold);">💰 Deposit Funds</h3>
-            
-            <p style="color:var(--text-dim); font-size:0.9rem; margin:1rem 0 0.5rem 0;">Enter amount (USD) <span style="color:var(--text-faint); font-size:0.75rem;">— Min. $500</span></p>
-            <input type="number" id="depositAmount" value="500" step="10" min="500"
-                style="width:100%; padding:0.8rem; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:1.2rem; text-align:center; margin-bottom:1rem;">
-            
-            <p style="color:var(--text-dim); font-size:0.9rem; margin:0 0 0.5rem 0;">Select Payment Method</p>
-            <select id="depositMethod" onchange="updatePaystackPreview()"
-                 style="width:100%; padding:0.8rem; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:1rem; text-align:center; margin-bottom:1rem; outline:none; cursor:pointer;">
-                <option value="card" style="background:#111827;">💳 Credit/Debit Card (Paystack Redirect)</option>
-                <option value="crypto-usdt" style="background:#111827;">🪙 Tether (USDT - TRC20)</option>
-                <option value="crypto-btc" style="background:#111827;">₿ Bitcoin (BTC)</option>
-                <option value="crypto-eth" style="background:#111827;">Ξ Ethereum (ETH)</option>
-            </select>
-
-            <div id="paystackInsights" style="display:none; text-align:left; margin-bottom:1rem; padding:0.8rem; border:1px solid rgba(201,168,76,0.2); border-radius:10px; background:rgba(201,168,76,0.05);">
-                <div style="font-size:0.76rem; font-weight:700; color:var(--gold); margin-bottom:0.35rem;">Card Payment (Paystack)</div>
-                <div style="font-size:0.72rem; color:var(--text-dim); line-height:1.45;">Paystack currently accepts card payments in Nigerian Naira (NGN). Although you enter your deposit in USD, your card will be charged the equivalent amount in NGN using the current exchange rate.</div>
-                <div style="font-size:0.72rem; color:var(--text-dim); margin-top:0.3rem;">Use Paystack only for debit/credit card payments. For cryptocurrency payments, use the Crypto Payment option instead.</div>
-                <div style="margin-top:0.7rem; padding:0.65rem; border:1px solid rgba(201,168,76,0.16); border-radius:8px; background:rgba(255,255,255,0.02);">
-                    <div style="font-size:0.64rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-faint); margin-bottom:0.25rem;">Estimated charge</div>
-                    <div style="font-weight:700; color:var(--text);">You entered: <span id="paystackUsdDisplay">$0.00</span></div>
-                    <div style="font-weight:700; color:var(--gold); margin-top:0.15rem;">Estimated charge: <span id="paystackNgnDisplay">₦0.00</span></div>
-                    <div style="font-size:0.68rem; color:var(--text-faint); margin-top:0.25rem;">Current exchange rate: <span id="paystackRateDisplay">1 USD = ₦0.00</span></div>
-                </div>
-            </div>
-
-            <div style="display:flex; gap:0.8rem; margin-top:1.5rem;">
-                <button onclick="closeDepositModal()"
-                    style="flex:1; padding:0.8rem; background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--text-dim); cursor:pointer;">Cancel</button>
-                <button onclick="submitDeposit()"
-                    style="flex:1; padding:0.8rem; background:var(--gold); border:none; border-radius:8px; color:var(--bg); font-weight:600; cursor:pointer;">Deposit</button>
+            <div class="status-sub">
+                <button onclick="dismissRejectedBanner()" class="btn btn-sm btn-ghost" style="margin-top:0.3rem;">Dismiss</button>
             </div>
         </div>
     </div>
-
-    <!-- Crypto Deposit Modal -->
-    <div id="cryptoModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.88); z-index:999; align-items:center; justify-content:center; padding:1rem;">
-        <div style="background:#111827; border-radius:18px; max-width:440px; width:100%; border:1px solid rgba(201,168,76,0.25); box-shadow: 0 20px 60px rgba(0,0,0,0.6); overflow:hidden;">
-
-            <!-- Header -->
-            <div style="background:linear-gradient(135deg,rgba(201,168,76,0.15),rgba(201,168,76,0.05)); padding:1.5rem; text-align:center; border-bottom:1px solid rgba(201,168,76,0.12);">
-                <div style="font-size:1.8rem; margin-bottom:0.3rem;">💎</div>
-                <h3 style="color:var(--gold); margin:0; font-size:1.1rem; font-family:Georgia,serif;">Crypto Payment</h3>
-                <p style="color:var(--text-faint); font-size:0.72rem; margin:0.3rem 0 0; text-transform:uppercase; letter-spacing:1.5px;" id="cryptoCurrencyLabel">USDT · TRC20 Network</p>
-            </div>
-
-            <!-- Steps Guide -->
-            <div style="padding:1.2rem 1.5rem 0.5rem;">
-                <div style="display:flex; gap:0.5rem; align-items:flex-start; margin-bottom:1rem;">
-                    <div style="min-width:22px; height:22px; border-radius:50%; background:var(--gold); color:var(--bg); font-size:0.65rem; font-weight:700; display:flex;align-items:center;justify-content:center; margin-top:1px;">1</div>
-                    <div>
-                        <div style="font-size:0.8rem; color:var(--text); font-weight:600; margin-bottom:0.15rem;">Copy the wallet address below</div>
-                        <div style="font-size:0.72rem; color:var(--text-dim);">Use your crypto wallet or exchange to initiate the transfer.</div>
-                    </div>
-                </div>
-                <div style="display:flex; gap:0.5rem; align-items:flex-start; margin-bottom:1rem;">
-                    <div style="min-width:22px; height:22px; border-radius:50%; background:var(--gold); color:var(--bg); font-size:0.65rem; font-weight:700; display:flex;align-items:center;justify-content:center; margin-top:1px;">2</div>
-                    <div>
-                        <div style="font-size:0.8rem; color:var(--text); font-weight:600; margin-bottom:0.15rem;">Send <strong id="cryptoAmountGuide" style="color:var(--gold);">—</strong> <span id="cryptoCurrencyGuide" style="color:var(--gold);">USDT</span> exactly</div>
-                        <div style="font-size:0.72rem; color:var(--text-dim);">Send the exact amount shown. The network processes your transaction automatically.</div>
-                    </div>
-                </div>
-                <div style="display:flex; gap:0.5rem; align-items:flex-start;">
-                    <div style="min-width:22px; height:22px; border-radius:50%; background:var(--gold); color:var(--bg); font-size:0.65rem; font-weight:700; display:flex;align-items:center;justify-content:center; margin-top:1px;">3</div>
-                    <div>
-                        <div style="font-size:0.8rem; color:var(--text); font-weight:600; margin-bottom:0.15rem;">Wait for automatic confirmation</div>
-                        <div style="font-size:0.72rem; color:var(--text-dim);">We monitor the blockchain in real-time. Your portfolio updates the moment payment is detected.</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Address Box -->
-            <div style="padding:0.8rem 1.5rem;">
-                <div style="font-size:0.65rem; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-faint); margin-bottom:0.4rem;">Wallet Address</div>
-                <div style="display:flex; gap:0.5rem; align-items:stretch;">
-                    <div id="cryptoAddress" style="flex:1; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:0.7rem 0.8rem; word-break:break-all; font-size:0.65rem; color:var(--text-dim); font-family:monospace; line-height:1.5;">—</div>
-                    <button onclick="copyCryptoAddress()" id="copyBtn" style="flex-shrink:0; padding:0.6rem 0.9rem; background:var(--gold); color:var(--bg); border:none; border-radius:8px; cursor:pointer; font-size:0.75rem; font-weight:700; white-space:nowrap; transition:all 0.2s;">
-                        📋 Copy
-                    </button>
-                </div>
-            </div>
-
-            <!-- Amount Reminder -->
-            <div style="margin:0 1.5rem; background:rgba(201,168,76,0.07); border:1px solid rgba(201,168,76,0.15); border-radius:10px; padding:0.8rem; text-align:center;">
-                <div style="font-size:0.65rem; color:var(--text-faint); text-transform:uppercase; letter-spacing:1px; margin-bottom:0.2rem;">Send Exactly</div>
-                <div style="font-size:1.4rem; font-weight:700; color:var(--gold); font-family:Georgia,serif;" id="cryptoAmountDisplay">—</div>
-                <div style="font-size:0.7rem; color:var(--text-dim);" id="cryptoUsdEquiv">≈ $0.00 USD</div>
-            </div>
-
-            <!-- Status Bar -->
-            <div style="margin:1rem 1.5rem; background:var(--bg); border-radius:10px; padding:1rem; border:1px solid var(--border);">
-                <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.6rem;">
-                    <div id="statusDot" style="width:9px; height:9px; border-radius:50%; background:var(--gold); animation: pulse 1.5s infinite;"></div>
-                    <div style="font-size:0.72rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px;">Payment Status</div>
-                </div>
-                <div id="cryptoStatus" style="font-size:0.9rem; font-weight:600; color:var(--gold);">Awaiting Transfer</div>
-                <div id="cryptoStatusSub" style="font-size:0.7rem; color:var(--text-faint); margin-top:0.2rem;">Monitoring blockchain for your transaction…</div>
-
-                <!-- Progress bar -->
-                <div style="margin-top:0.8rem; height:4px; background:rgba(255,255,255,0.05); border-radius:2px; overflow:hidden;">
-                    <div id="statusProgress" style="height:100%; width:0%; background:var(--gold); border-radius:2px; transition:width 1s ease;"></div>
-                </div>
-                <div style="display:flex; justify-content:space-between; margin-top:0.3rem;">
-                    <span style="font-size:0.55rem; color:var(--text-faint);">Waiting</span>
-                    <span style="font-size:0.55rem; color:var(--text-faint);">Detecting</span>
-                    <span style="font-size:0.55rem; color:var(--text-faint);">Confirming</span>
-                    <span style="font-size:0.55rem; color:var(--text-faint);">Complete</span>
-                </div>
-            </div>
-
-            <!-- Warning note -->
-            <div style="margin:0 1.5rem; display:flex; gap:0.5rem; align-items:flex-start;">
-                <span style="font-size:0.75rem; color:#F59E0B; margin-top:1px;">⚠️</span>
-                <p style="font-size:0.68rem; color:var(--text-faint); margin:0; line-height:1.5;">
-                    Do <strong style="color:var(--text-dim);">not</strong> close this window while your payment is processing. This page auto-updates when your payment is detected on the blockchain.
-                </p>
-            </div>
-
-            <!-- Actions -->
-            <div style="padding:1.2rem 1.5rem; display:flex; gap:0.7rem;">
-                <button onclick="closeCryptoModal()" style="flex:1; padding:0.75rem; background:transparent; color:var(--text-dim); border:1px solid var(--border); border-radius:8px; cursor:pointer; font-size:0.8rem;">
-                    Cancel
-                </button>
-                <a id="cryptoSupportLink" href="mailto:support@monarchwealth.com" style="flex:1; padding:0.75rem; background:rgba(201,168,76,0.1); color:var(--gold); border:1px solid rgba(201,168,76,0.2); border-radius:8px; cursor:pointer; font-size:0.8rem; text-align:center; text-decoration:none; display:flex; align-items:center; justify-content:center;">
-                    💬 Support
-                </a>
-            </div>
-        </div>
-    </div>
-
-    <!-- Tax Payment Modal -->
-    <div id="taxModal" class="modal">
-        <div class="modal-content">
-            <h3>⚖️ Tax Verification Required</h3>
-            <p>To process your withdrawal of <strong id="modalAmount">$0.00</strong>, a compliance tax of <strong id="modalTax">$0.00</strong> is required.</p>
-            <div class="payment-options">
-                <button onclick="payTaxCrypto()" class="btn-crypto">
-                    💎 Pay with Crypto (NOWPayments)
-                    <small>Bitcoin, Ethereum, USDT</small>
-                </button>
-                <button onclick="payTaxCard()" class="btn-card">
-                    💳 Pay with Card (Paystack)
-                    <small>Visa, Mastercard, Bank Transfer</small>
-                </button>
-            </div>
-            <p class="note">Your withdrawal will be processed immediately after tax confirmation.</p>
-            <button onclick="closeTaxModal()" class="btn-ghost">Cancel</button>
-        </div>
-    </div>
-
-    <style>
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-    </style>
 
 </div>
+
+<!-- ============================================================ -->
+<!-- 7. CRYPTO WALLET SETUP (shown when no wallet set)             -->
+<!-- ============================================================ -->
+<div id="bankDetailsFormCard" class="card" style="margin-bottom:1.5rem;display:{% if not user.crypto_wallet_address %}block{% else %}none{% endif %};">
+    <div class="card-header">
+        <div class="card-title">Set Up Crypto Wallet</div>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info" style="margin-bottom:1rem;">
+            <span>ℹ️</span>
+            <span>A crypto wallet is required to receive withdrawals. Choose your currency and enter your address below.</span>
+        </div>
+        <form id="cryptoWalletForm" onsubmit="submitCryptoWalletForm(event)">
+            <div class="form-row" style="margin-bottom:0.8rem;">
+                <div class="form-group">
+                    <label class="form-label" for="userCryptoCurrency">Currency</label>
+                    <select id="userCryptoCurrency" class="form-select" onchange="updateNetworkOptions()">
+                        <option value="USDT">USDT (Tether)</option>
+                        <option value="BTC">Bitcoin (BTC)</option>
+                        <option value="ETH">Ethereum (ETH)</option>
+                        <option value="BNB">BNB Chain</option>
+                        <option value="TRX">TRON (TRX)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="userCryptoNetwork">Network</label>
+                    <select id="userCryptoNetwork" class="form-select">
+                        <option value="TRC-20">TRC-20 (TRON)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="userWalletAddress">Wallet Address</label>
+                <input type="text" id="userWalletAddress" class="form-input" placeholder="Enter your wallet address" value="{{ user.crypto_wallet_address or '' }}" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="userConfirmWalletAddress">Confirm Wallet Address</label>
+                <input type="text" id="userConfirmWalletAddress" class="form-input" placeholder="Re-enter wallet address" required>
+            </div>
+            <button type="submit" id="btnSubmitBankDetails" class="btn btn-primary btn-block">
+                Save Wallet & Continue →
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 8. REFERRAL SECTION                                           -->
+<!-- ============================================================ -->
+<div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header">
+        <div class="card-title">Referral Program</div>
+        <span id="referralEarningsBadge" class="badge badge-gold" style="font-size:0.65rem;">$0.00 earned</span>
+    </div>
+    <div class="card-body" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+        <div style="flex:1;min-width:160px;">
+            <div class="form-label">Your Referral Code</div>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+                <span class="font-bold text-gold" style="font-size:1.4rem;letter-spacing:3px;font-family:var(--font-mono);" id="referralCodeDisplay">{{ user.referral_code or '------' }}</span>
+                <button id="copyRefBtn" class="btn btn-sm btn-primary" onclick="copyReferralLink()">Copy Link</button>
+            </div>
+        </div>
+        <div style="display:flex;gap:1.2rem;padding:0.5rem 0;">
+            <div style="text-align:center;">
+                <div class="stat-value" id="referralEarnings" style="font-size:1.2rem;">${{ user.referral_earnings|default(0)|round(2) }}</div>
+                <div class="stat-label" style="font-size:0.6rem;">Earnings</div>
+            </div>
+            <div class="divider" style="width:1px;height:40px;margin:0;"></div>
+            <div style="text-align:center;">
+                <div class="stat-value" id="referredCount" style="font-size:1.2rem;">0</div>
+                <div class="stat-label" style="font-size:0.6rem;">Referred</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 9. TRUST SECTION                                              -->
+<!-- ============================================================ -->
+<div class="card" style="margin-bottom:1.5rem;background:var(--bg-secondary);border-color:var(--border-primary);">
+    <div class="card-body">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+            <div style="display:flex;align-items:center;gap:0.8rem;">
+                <div style="width:40px;height:40px;border-radius:50%;background:var(--gold-dim);display:flex;align-items:center;justify-content:center;font-size:1.2rem;">🔒</div>
+                <div>
+                    <div style="font-size:0.85rem;font-weight:600;color:var(--text-primary);">Trust & Security</div>
+                    <div style="font-size:0.72rem;color:var(--text-tertiary);">Your capital is protected by industry-leading encryption and compliance standards.</div>
+                </div>
+            </div>
+            <div style="display:flex;gap:1.5rem;flex-wrap:wrap;">
+                <div style="text-align:center;">
+                    <div class="font-bold text-gold" style="font-size:1rem;">256-bit</div>
+                    <div class="stat-label" style="font-size:0.55rem;">Encryption</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="font-bold text-gold" style="font-size:1rem;">SOC 2</div>
+                    <div class="stat-label" style="font-size:0.55rem;">Compliant</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="font-bold text-gold" style="font-size:1rem;">24/7</div>
+                    <div class="stat-label" style="font-size:0.55rem;">Monitoring</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="font-bold text-gold" style="font-size:1rem;">FDIC</div>
+                    <div class="stat-label" style="font-size:0.55rem;">Insured</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- HIDDEN: Yield Display (used by dashboard.js)                  -->
+<!-- ============================================================ -->
+<span id="yieldDisplay" style="display:none;">0.0%</span>
+
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
 {% endblock %}

@@ -454,7 +454,7 @@ def restrict_unapproved_users():
         'admin_withdrawal_stats', 'admin_waiting_list_applications',
         'admin_approve_application', 'admin_reject_application', 'admin_waiting_list_bulk',
         'admin_settings_api', 'admin_mentor_conversations', 'admin_mentor_messages',
-        'admin_mentor_send'
+        'admin_mentor_send', 'dashboard_deposit', 'dashboard_withdraw'
     ]
     if request.endpoint in allowed_endpoints or not request.endpoint:
         return
@@ -568,6 +568,269 @@ def dashboard():
                            paystack_public_key=PAYSTACK_PUBLIC_KEY,
                            referred_count=referred_count,
                            referral_bonuses=referral_bonuses)
+
+
+@app.route('/dashboard/deposit')
+@login_required
+def dashboard_deposit():
+    """Dedicated deposit page."""
+    apply_growth(current_user)
+    return render_template('deposit.html', user=current_user,
+                           paystack_public_key=PAYSTACK_PUBLIC_KEY)
+
+
+@app.route('/dashboard/withdraw')
+@login_required
+def dashboard_withdraw():
+    """Dedicated withdraw page."""
+    apply_growth(current_user)
+    return render_template('withdraw.html', user=current_user)
+
+
+@app.route('/dashboard/transactions')
+@login_required
+def dashboard_transactions():
+    """Dedicated transactions / history page."""
+    apply_growth(current_user)
+    return render_template('transactions.html', user=current_user)
+
+
+@app.route('/dashboard/settings')
+@login_required
+def dashboard_settings():
+    """Dedicated settings page."""
+    apply_growth(current_user)
+    return render_template('settings.html', user=current_user)
+
+
+@app.route('/dashboard/profile')
+@login_required
+def dashboard_profile():
+    """Dedicated profile page."""
+    apply_growth(current_user)
+    return render_template('profile.html', user=current_user)
+
+
+@app.route('/dashboard/notifications')
+@login_required
+def dashboard_notifications():
+    """Dedicated notifications page."""
+    apply_growth(current_user)
+    return render_template('notifications.html', user=current_user)
+
+
+@app.route('/dashboard/support')
+@login_required
+def dashboard_support():
+    """Dedicated support page."""
+    apply_growth(current_user)
+    return render_template('support.html', user=current_user)
+
+
+# ==================================================================
+# TRANSACTIONS API
+# ==================================================================
+
+@app.route('/api/transactions')
+@login_required
+def get_transactions():
+    """Get all transactions for the current user with pagination."""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    tx_type = request.args.get('type', '')
+
+    query = Transaction.query.filter_by(user_id=current_user.id)
+    if tx_type:
+        query = query.filter_by(type=tx_type)
+
+    pagination = query.order_by(Transaction.timestamp.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+    transactions = pagination.items
+
+    result = []
+    for t in transactions:
+        result.append({
+            'id': t.id,
+            'amount': round(t.amount, 2),
+            'type': t.type,
+            'description': t.description or '',
+            'timestamp': t.timestamp.strftime('%Y-%m-%d %H:%M:%S') if t.timestamp else '',
+            'date': t.timestamp.strftime('%b %d, %Y') if t.timestamp else '',
+            'time': t.timestamp.strftime('%I:%M %p') if t.timestamp else '',
+        })
+
+    return jsonify({
+        'success': True,
+        'transactions': result,
+        'page': page,
+        'per_page': per_page,
+        'total': pagination.total,
+        'pages': pagination.pages
+    })
+
+
+@app.route('/api/transactions/summary')
+@login_required
+def get_transactions_summary():
+    """Get transaction counts and totals by type."""
+    deposits = db.session.query(db.func.sum(Transaction.amount)).filter(
+        Transaction.user_id == current_user.id,
+        Transaction.type == 'deposit'
+    ).scalar() or 0
+
+    withdrawals = db.session.query(db.func.sum(Transaction.amount)).filter(
+        Transaction.user_id == current_user.id,
+        Transaction.type == 'withdrawal'
+    ).scalar() or 0
+
+    growth = db.session.query(db.func.sum(Transaction.amount)).filter(
+        Transaction.user_id == current_user.id,
+        Transaction.type == 'growth'
+    ).scalar() or 0
+
+    tax_payments = db.session.query(db.func.sum(Transaction.amount)).filter(
+        Transaction.user_id == current_user.id,
+        Transaction.type == 'tax_payment'
+    ).scalar() or 0
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'total_deposits': round(deposits, 2),
+            'total_withdrawals': round(withdrawals, 2),
+            'total_growth': round(growth, 2),
+            'total_tax_paid': round(tax_payments, 2),
+            'transaction_count': Transaction.query.filter_by(user_id=current_user.id).count()
+        }
+    })
+
+
+# ==================================================================
+# PROFILE API
+# ==================================================================
+
+@app.route('/api/user/profile', methods=['GET', 'POST'])
+@login_required
+def user_profile():
+    """Get or update user profile information."""
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        username = data.get('username', '').strip()
+        email = data.get('email', '').strip()
+
+        if username and username != current_user.username:
+            existing = User.query.filter_by(username=username).first()
+            if existing:
+                return jsonify({'success': False, 'message': 'Username already taken'}), 400
+            current_user.username = username
+
+        if email and email != current_user.email:
+            existing = User.query.filter_by(email=email).first()
+            if existing:
+                return jsonify({'success': False, 'message': 'Email already in use'}), 400
+            current_user.email = email
+
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Profile updated successfully'})
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'username': current_user.username,
+            'email': current_user.email,
+            'member_since': current_user.created_at.strftime('%B %Y') if current_user.created_at else 'N/A',
+            'referral_code': current_user.referral_code or '',
+            'wallet_address': current_user.crypto_wallet_address or '',
+            'wallet_network': current_user.crypto_network or '',
+            'wallet_currency': current_user.crypto_currency or 'USDT',
+        }
+    })
+
+
+@app.route('/api/user/wallet', methods=['GET'])
+@login_required
+def get_user_wallet():
+    """Get the current user's saved crypto wallet details."""
+    return jsonify({
+        'success': True,
+        'data': {
+            'wallet_address': current_user.crypto_wallet_address or '',
+            'wallet_network': current_user.crypto_network or 'Ethereum (ERC-20)',
+            'wallet_currency': current_user.crypto_currency or 'USDT',
+            'wallet_verified': current_user.wallet_verified or False,
+        }
+    })
+
+
+# ==================================================================
+# WITHDRAWAL SETTINGS API (for Settings page)
+# ==================================================================
+
+@app.route('/api/withdrawal/settings')
+@login_required
+def get_withdrawal_settings():
+    """Get withdrawal cycle settings for the user."""
+    settings = WithdrawalSettings.query.first()
+    now = _now()
+    last_day = (now.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'min_withdrawal': settings.min_withdrawal if settings else 1000.00,
+            'tax_rate': settings.tax_rate if settings else 20.00,
+            'cut_off_day': settings.cut_off_day if settings else 25,
+            'processing_day': last_day.strftime('%Y-%m-%d'),
+            'current_cycle': now.strftime('%B %Y'),
+            'can_request': 1 <= now.day <= (settings.cut_off_day if settings else 25),
+        }
+    })
+
+
+# ==================================================================
+# NOTIFICATIONS API
+# ==================================================================
+
+@app.route('/api/notifications')
+@login_required
+def get_notifications():
+    """Get recent notifications / activity for the user."""
+    transactions = Transaction.query.filter_by(user_id=current_user.id)\
+        .order_by(Transaction.timestamp.desc()).limit(20).all()
+
+    notifications = []
+    for t in transactions:
+        icon_map = {
+            'deposit': '💰',
+            'withdrawal': '💸',
+            'growth': '📈',
+            'tax_payment': '⚖️',
+            'referral_bonus': '🎁',
+        }
+        title_map = {
+            'deposit': 'Deposit Received',
+            'withdrawal': 'Withdrawal Processed',
+            'growth': 'Portfolio Growth',
+            'tax_payment': 'Tax Payment',
+            'referral_bonus': 'Referral Bonus',
+        }
+        notifications.append({
+            'id': t.id,
+            'icon': icon_map.get(t.type, '📌'),
+            'title': title_map.get(t.type, 'Transaction'),
+            'description': t.description or f'{t.type.capitalize()} of ${t.amount:.2f}',
+            'amount': round(t.amount, 2),
+            'type': t.type,
+            'time': t.timestamp.strftime('%Y-%m-%d %H:%M') if t.timestamp else '',
+            'is_read': True,
+        })
+
+    return jsonify({
+        'success': True,
+        'notifications': notifications,
+        'unread_count': 0
+    })
 
 
 # ==================================================================

@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+
+{% block title %}Withdraw – Monarch Wealth Group{% endblock %}
+
+{% block content %}
+<div class="dashboard-page">
+    <div style="max-width: 720px; margin: 0 auto; padding: 1.5rem 0 3rem;">
+        <!-- Back link -->
+        <a href="{{ url_for('dashboard') }}" style="display: inline-flex; align-items: center; gap: 0.4rem; color: var(--text-dim); text-decoration: none; font-size: 0.8rem; margin-bottom: 1.5rem; transition: color 0.2s;">
+            ← Back to Dashboard
+        </a>
+
+        <!-- Withdraw Card -->
+        <div style="background: var(--bg-elev); border: 1px solid var(--border); border-radius: 20px; padding: 2rem; box-shadow: 0 18px 80px rgba(0,0,0,0.22);">
+            <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border);">
+                <span style="font-size: 2rem;">💸</span>
+                <div>
+                    <h2 style="font-family: var(--font-serif); font-size: 1.4rem; color: var(--white); margin: 0;">Withdraw Funds</h2>
+                    <p style="font-size: 0.78rem; color: var(--text-dim); margin: 0.2rem 0 0;">Request a payout to your crypto wallet</p>
+                </div>
+            </div>
+
+            <!-- Withdrawal Policy Notice -->
+            <div style="background: rgba(200,168,94,0.08); border: 1px solid rgba(200,168,94,0.2); border-radius: 10px; padding: 0.9rem 1rem; margin-bottom: 1.2rem;">
+                <div style="display: flex; gap: 0.7rem; align-items: flex-start;">
+                    <span style="color: var(--gold); font-size: 1rem; flex-shrink: 0;">📋</span>
+                    <div>
+                        <strong style="color: var(--text); font-size: 0.85rem;">Withdrawal Policy</strong>
+                        <ul style="font-size: 0.72rem; color: var(--text-faint); margin: 0.4rem 0 0; padding-left: 1.2rem; line-height: 1.7;">
+                            <li>Minimum withdrawal: <strong style="color: var(--text);">$1,000 USD</strong></li>
+                            <li>Withdrawals processed on the <strong style="color: var(--gold);">last day</strong> of each month</li>
+                            <li>Cut-off date: <strong style="color: var(--text);">25th</strong> of each month</li>
+                            <li><strong style="color: #F59E0B;">20%</strong> processing tax applies</li>
+                            <li>Funds sent to your crypto wallet</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Balance & Eligibility -->
+            <div class="form-group" style="margin-bottom: 1.2rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; flex-wrap: wrap; gap: 0.5rem;">
+                    <span style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim);">Available Balance</span>
+                    <span style="font-size: 1.5rem; font-weight: 700; color: var(--white); font-family: var(--font-serif);" id="withdrawAvailableBalance">${{ "%.2f"|format(user.balance) }}</span>
+                </div>
+                <div style="background: var(--bg-deep); border-radius: 8px; padding: 0.8rem 1rem; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                    <span style="font-size: 0.75rem; color: var(--text-dim);">Minimum Required: <strong style="color: var(--text);">$1,000.00</strong></span>
+                    <span id="eligibilityStatusLabel" style="font-size: 0.75rem; font-weight: 700; color: var(--text-faint);">Checking eligibility...</span>
+                </div>
+            </div>
+
+            <!-- Wallet Check Banner -->
+            <div id="walletMissingBanner" style="display:none; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:10px; padding:0.9rem 1rem; margin-bottom:1rem; font-size:0.8rem; color:#F87171;">
+                ⚠️ <strong>No crypto wallet set.</strong> You must save a payout wallet address before requesting a withdrawal.
+                <button onclick="showWalletForm()" style="margin-left:0.6rem; background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.4); color:#F87171; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer; font-size:0.75rem;">Set Wallet →</button>
+            </div>
+
+            <!-- Wallet Info Banner -->
+            <div id="walletInfoBanner" style="display:none; background:rgba(16,185,129,0.07); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1rem; font-size:0.78rem; color:var(--text-dim); align-items:center; justify-content:space-between;">
+                <div style="display:flex; gap:0.6rem; align-items:center;">
+                    <span>🔐</span>
+                    <div>
+                        <div style="color: #10B981; font-weight:600; font-size:0.72rem;">Payout Wallet Set</div>
+                        <div id="walletAddressPreview" style="font-family:monospace; font-size:0.7rem;">—</div>
+                    </div>
+                </div>
+                <button onclick="showWalletForm()" style="background:none; border:1px solid rgba(16,185,129,0.3); color:#10B981; padding:0.3rem 0.6rem; border-radius:6px; cursor:pointer; font-size:0.7rem;">Edit</button>
+            </div>
+
+            <!-- Cycle Info -->
+            <div id="cycleInfoBanner" style="background:rgba(200,168,94,0.07); border:1px solid rgba(200,168,94,0.2); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1.2rem; font-size:0.78rem; color:var(--text-dim); display:flex; gap:0.6rem; align-items:center;">
+                <span>📅</span>
+                <span>Withdrawal requests accepted <strong style="color:var(--text);">1st–25th</strong> each month. Payouts sent on the <strong style="color:var(--gold);" id="cycleProcessingDate">last day</strong> of the month.</span>
+            </div>
+
+            <!-- Withdrawal Request Form -->
+            <div id="withdrawalRequestForm" style="display: none;">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); display: block; margin-bottom: 0.4rem;">Amount to Withdraw</label>
+                    <div class="input-wrapper" style="display: flex; gap: 0.5rem;">
+                        <input type="number" id="withdrawAmount" min="1000" max="{{ user.balance }}" step="10" placeholder="Min. $1,000" oninput="calculateBreakdown()"
+                            style="flex:1; padding:0.85rem; background:var(--bg-deep); border:1px solid var(--border); border-radius:10px; color:var(--text); font-size:1.2rem; font-weight:700; outline:none;">
+                        <button class="btn-max" onclick="setMaxAmount()">Max</button>
+                    </div>
+                </div>
+
+                <!-- Eligibility Progress Bar -->
+                <div id="eligibilityBar" style="margin-bottom:0.8rem; display:none;">
+                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-faint); margin-bottom:0.3rem;">
+                        <span>Withdrawal Eligibility</span>
+                        <span id="eligibilityPercent">0%</span>
+                    </div>
+                    <div style="height:6px; background:rgba(255,255,255,0.06); border-radius:4px; overflow:hidden;">
+                        <div id="eligibilityFill" style="height:100%; width:0%; background: linear-gradient(90deg, #C8A85E, #10B981); border-radius:4px; transition: width 0.5s ease;"></div>
+                    </div>
+                    <div style="font-size:0.65rem; color:var(--text-faint); margin-top:0.25rem;" id="eligibilityNote"></div>
+                </div>
+
+                <div class="breakdown">
+                    <div class="row">
+                        <span>Withdrawal Amount</span>
+                        <span id="displayAmount">$0.00</span>
+                    </div>
+                    <div class="row tax-row">
+                        <span>Processing Tax (20%)</span>
+                        <span id="displayTax">$0.00</span>
+                    </div>
+                    <div class="row total-row">
+                        <span>Net Payout (Crypto)</span>
+                        <span id="displayNet">$0.00</span>
+                    </div>
+                </div>
+
+                <div class="info-box">
+                    <i class="fas fa-info-circle"></i>
+                    <small>A 20% compliance tax is required before crypto payout. This covers cross-border regulatory fees and is non-refundable.</small>
+                </div>
+
+                <button class="btn-gold" onclick="requestWithdrawal()" disabled id="withdrawBtn">
+                    Request Withdrawal →
+                </button>
+            </div>
+
+            <!-- Window Closed Message -->
+            <div id="windowClosedMessage" style="display:none; text-align:center; padding:2rem 1rem; background:rgba(239,68,68,0.05); border:1px solid rgba(239,68,68,0.2); border-radius:12px;">
+                <span style="font-size: 2rem; display: block; margin-bottom: 0.5rem;">🔒</span>
+                <h3 style="color: var(--text); font-family: var(--font-serif); font-size: 1.1rem; margin-bottom: 0.3rem;">Withdrawal Window Closed</h3>
+                <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.3rem;">The submission window is currently closed. Requests are accepted <strong>1st–25th</strong> of each month.</p>
+                <p style="font-size: 0.75rem; color: var(--gold);">Next window opens on the 1st.</p>
+            </div>
+
+            <!-- Countdown Timer -->
+            <div id="countdownSection" style="margin-top: 1rem; padding: 1rem; background: rgba(200,168,94,0.04); border-radius: 12px; border: 1px solid rgba(200,168,94,0.15); text-align: center; display:none;">
+                <div style="font-size: 0.68rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-faint);">Time Until Next Processing Date</div>
+                <div id="countdownDisplay" style="font-size: 1.5rem; font-weight: 700; font-family: var(--font-serif); color: var(--gold); margin-top: 0.3rem;">—</div>
+                <div style="font-size: 0.65rem; color: var(--text-dim); margin-top: 0.2rem;" id="countdownSub">Processing occurs on the last day of the month</div>
+            </div>
+
+            <!-- Wallet Setup Form -->
+            <div id="walletFormCard" style="display:none; margin-top: 1.5rem; padding: 1.5rem; background: var(--bg-card); border: 1px solid var(--border-gold); border-radius: 16px;">
+                <div style="display: flex; gap: 0.8rem; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.8rem; width:100%; margin-bottom: 1rem;">
+                    <div style="font-size: 1.5rem;">🔐</div>
+                    <div>
+                        <h4 style="font-size: 1rem; color: var(--gold); font-family: var(--font-serif); margin:0 0 0.15rem;">Crypto Wallet Setup</h4>
+                        <p style="font-size: 0.76rem; color: var(--text-dim); margin:0;">Payouts are sent exclusively via blockchain transfer. Provide your wallet address below.</p>
+                    </div>
+                </div>
+                <form id="walletForm" onsubmit="submitWalletForm(event)" style="display: flex; flex-direction: column; gap: 0.8rem;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem;">
+                        <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                            <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Network *</label>
+                            <select id="walletNetwork" onchange="updateWalletPreview()" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none; cursor: pointer;">
+                                <option value="Ethereum (ERC-20)">Ethereum (ERC-20)</option>
+                                <option value="BSC (BEP-20)">BSC (BEP-20)</option>
+                                <option value="Tron (TRC-20)">Tron (TRC-20)</option>
+                                <option value="Bitcoin">Bitcoin</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                            <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Currency</label>
+                            <select id="walletCurrency" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none; cursor: pointer;">
+                                <option value="USDT">USDT</option>
+                                <option value="BTC">BTC</option>
+                                <option value="ETH">ETH</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                        <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Wallet Address *</label>
+                        <input type="text" id="walletAddress" required placeholder="e.g. 0xAbc... or TXyz..." style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none; font-family: monospace; font-size: 0.8rem;">
+                        <span style="font-size: 0.65rem; color: var(--text-faint);" id="walletValidationHint">⚠️ Double-check your address. Incorrect addresses result in permanent loss of funds.</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                        <label style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.5px;">Confirm Wallet Address *</label>
+                        <input type="text" id="walletAddressConfirm" required placeholder="Re-enter wallet address" style="padding: 0.6rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none; font-family: monospace; font-size: 0.8rem;">
+                    </div>
+                    <div style="display:flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem; flex-wrap:wrap; gap:0.5rem;">
+                        <span style="font-size: 0.65rem; color: var(--text-faint);">🔒 Wallet info is encrypted and used only for payouts.</span>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button type="button" onclick="hideWalletForm()" style="padding: 0.55rem 1rem; background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--text-dim); cursor:pointer; font-size:0.75rem;">Cancel</button>
+                            <button type="submit" id="walletSubmitBtn" style="padding: 0.55rem 1rem; background:var(--gold); color:var(--bg); border:none; border-radius:8px; cursor:pointer; font-size:0.78rem; font-weight:600;">Save Wallet →</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Status Cards Section -->
+        <div id="statusCardsSection" style="margin-top: 1rem;">
+            <!-- Tax Required -->
+            <div class="withdrawal-status tax-required" id="taxRequiredStatusCard" style="display:none;">
+                <div class="status-icon">⚠️</div>
+                <div class="status-details">
+                    <h4>Tax Verification Required</h4>
+                    <p>To process your withdrawal of <strong id="unpaidAmountDisplay">$0.00</strong>, a 20% compliance tax is required.</p>
+                    <p class="sub">Pay <strong id="unpaidTaxDisplay">$0.00</strong> now to continue.</p>
+                    <button class="btn-gold" onclick="resumeTaxPayment()" style="width:auto; padding:0.5rem 1rem; font-size:0.8rem;">⚖️ Pay Compliance Tax</button>
+                </div>
+            </div>
+
+            <!-- Pending -->
+            <div class="withdrawal-status pending" id="pendingStatusCard" style="display:none;">
+                <div class="status-icon">⏳</div>
+                <div class="status-details">
+                    <h4>Withdrawal Processing</h4>
+                    <p>Your withdrawal of <strong id="pendingAmountDisplay">$0.00</strong> is currently pending.</p>
+                    <p class="sub">Estimated completion: last day of the month.</p>
+                    <div class="status-bar"><div class="progress"></div></div>
+                    <small>Processing time may vary due to compliance checks.</small>
+                </div>
+            </div>
+
+            <!-- Completed -->
+            <div class="withdrawal-status completed" id="completedStatusCard" style="display:none;">
+                <div class="status-icon">✅</div>
+                <div class="status-details">
+                    <h4>Withdrawal Completed!</h4>
+                    <p>Your withdrawal of <strong id="completedAmountDisplay">$0.00</strong> has been approved and processed.</p>
+                    <p class="sub">Funds have been sent to your crypto wallet.</p>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.8rem; flex-wrap: wrap;">
+                        <button class="btn-gold" id="completedReceiptBtn" style="width:auto; padding:0.4rem 0.8rem; font-size:0.72rem;">📄 View Receipt</button>
+                        <button class="btn-ghost" onclick="dismissBanner('completed')" style="padding:0.4rem 0.8rem; font-size:0.72rem;">Dismiss</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rejected -->
+            <div class="withdrawal-status rejected" id="rejectedStatusCard" style="display:none;">
+                <div class="status-icon">⛔</div>
+                <div class="status-details">
+                    <h4>Withdrawal Declined</h4>
+                    <p>Your withdrawal of <strong id="rejectedAmountDisplay">$0.00</strong> was declined.</p>
+                    <p class="sub">Reason: <strong id="rejectedReasonDisplay" style="color:var(--text-dim);">No reason provided.</strong></p>
+                    <button class="btn-ghost" onclick="dismissBanner('rejected')" style="padding:0.4rem 0.8rem; font-size:0.72rem;">Dismiss</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tax Modal -->
+        <div id="taxModal" class="modal">
+            <div class="modal-content">
+                <h3>⚖️ Tax Verification Required</h3>
+                <p>To process your withdrawal of <strong id="modalAmount">$0.00</strong>, a compliance tax of <strong id="modalTax">$0.00</strong> is required.</p>
+                <div class="payment-options">
+                    <button onclick="payTaxCrypto()" class="btn-crypto">
+                        💎 Pay with Crypto (NOWPayments)
+                        <small>Bitcoin, Ethereum, USDT</small>
+                    </button>
+                    <button onclick="payTaxCard()" class="btn-card">
+                        💳 Pay with Card (Paystack)
+                        <small>Visa, Mastercard, Bank Transfer</small>
+                    </button>
+                </div>
+                <p class="note">Your withdrawal will be processed immediately after tax confirmation.</p>
+                <button onclick="closeTaxModal()" class="btn-ghost">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Receipts Section -->
+        <div style="margin-top: 1.5rem;">
+            <div style="font-size: 0.85rem; font-weight: 700; color: var(--white); margin-bottom: 0.8rem;">📁 Completed Payout Receipts</div>
+            <div id="receiptsList">
+                <p style="text-align: center; color: var(--text-faint); font-size: 0.8rem; padding: 1.5rem 0;">Loading receipts...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='withdraw.js') }}"></script>
+{% endblock %}

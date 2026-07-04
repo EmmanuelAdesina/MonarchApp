@@ -1,0 +1,381 @@
+{% extends "dashboard_base.html" %}
+
+{% set active_page = "settings" %}
+{% set title = "Settings – Monarch Wealth Group" %}
+
+{% block dashboard_content %}
+<div class="page-header">
+    <h1 class="page-title">Settings</h1>
+    <p class="page-subtitle">Manage your account and payout preferences</p>
+</div>
+
+<div class="grid-2" style="align-items: start;">
+    <!-- Left Column -->
+    <div>
+        <!-- Crypto Wallet Section -->
+        <div class="card" style="margin-bottom: 1rem;">
+            <div class="card-header">
+                <h2 class="card-title">Crypto Wallet</h2>
+            </div>
+            <div class="card-body">
+                <div id="wallet-alert"></div>
+                <form id="wallet-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="wallet-currency">Currency</label>
+                            <select class="form-select" id="wallet-currency" required>
+                                <option value="">Select currency</option>
+                                <option value="USDT">USDT</option>
+                                <option value="BTC">BTC</option>
+                                <option value="ETH">ETH</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="wallet-network">Network</label>
+                            <select class="form-select" id="wallet-network" required>
+                                <option value="">Select network</option>
+                            </select>
+                            <p class="form-hint" id="network-hint">Network is auto-populated based on currency</p>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="wallet-address">Wallet Address</label>
+                        <input class="form-input" type="text" id="wallet-address" placeholder="Enter your wallet address" required autocomplete="off">
+                        <p class="form-hint" id="address-hint">Enter a valid wallet address for the selected network</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="wallet-confirm">Confirm Wallet Address</label>
+                        <input class="form-input" type="text" id="wallet-confirm" placeholder="Re-enter your wallet address" required autocomplete="off">
+                        <p class="form-hint" id="confirm-hint">Must match the address above</p>
+                    </div>
+                    <button class="btn btn-primary btn-block" type="submit" id="wallet-save-btn">
+                        Save Wallet
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Account Info Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Account Info</h2>
+            </div>
+            <div class="card-body">
+                <div style="display: flex; flex-direction: column; gap: 0.8rem;">
+                    <div>
+                        <span class="form-label">Username</span>
+                        <p style="color: var(--text-primary); font-weight: 500;">{{ user.username }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label">Email</span>
+                        <p style="color: var(--text-primary); font-weight: 500;">{{ user.email }}</p>
+                    </div>
+                    <div>
+                        <span class="form-label">Member Since</span>
+                        <p style="color: var(--text-primary); font-weight: 500;">{{ user.created_at.strftime('%B %d, %Y') if user.created_at else 'N/A' }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column -->
+    <div>
+        <!-- Withdrawal Settings Section -->
+        <div class="card" id="withdrawal-settings-card">
+            <div class="card-header">
+                <h2 class="card-title">Withdrawal Settings</h2>
+            </div>
+            <div class="card-body">
+                <div id="withdrawal-loading" style="text-align: center; padding: 1.5rem; color: var(--text-tertiary);">
+                    Loading withdrawal settings...
+                </div>
+                <div id="withdrawal-content" style="display: none;">
+                    <div style="display: flex; flex-direction: column; gap: 1rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--border-secondary);">
+                            <span style="color: var(--text-secondary); font-size: 0.85rem;">Minimum Withdrawal</span>
+                            <span style="color: var(--text-primary); font-weight: 600; font-size: 1rem;" id="withdrawal-min">$1,000</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--border-secondary);">
+                            <span style="color: var(--text-secondary); font-size: 0.85rem;">Tax Rate</span>
+                            <span style="color: var(--text-primary); font-weight: 600; font-size: 1rem;" id="withdrawal-tax">20%</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--border-secondary);">
+                            <span style="color: var(--text-secondary); font-size: 0.85rem;">Current Cycle</span>
+                            <span style="color: var(--text-primary); font-weight: 600; font-size: 1rem;" id="withdrawal-cycle">—</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--border-secondary);">
+                            <span style="color: var(--text-secondary); font-size: 0.85rem;">Processing Date</span>
+                            <span style="color: var(--text-primary); font-weight: 600; font-size: 1rem;" id="withdrawal-processing">—</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0;">
+                            <span style="color: var(--text-secondary); font-size: 0.85rem;">Cut-off Day</span>
+                            <span style="color: var(--text-primary); font-weight: 600; font-size: 1rem;" id="withdrawal-cutoff">—</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function() {
+    'use strict';
+
+    // ----- DOM refs -----
+    const form = document.getElementById('wallet-form');
+    const currencySelect = document.getElementById('wallet-currency');
+    const networkSelect = document.getElementById('wallet-network');
+    const addressInput = document.getElementById('wallet-address');
+    const confirmInput = document.getElementById('wallet-confirm');
+    const saveBtn = document.getElementById('wallet-save-btn');
+    const alertEl = document.getElementById('wallet-alert');
+    const addressHint = document.getElementById('address-hint');
+    const confirmHint = document.getElementById('confirm-hint');
+
+    // Withdrawal elements
+    const withdrawalLoading = document.getElementById('withdrawal-loading');
+    const withdrawalContent = document.getElementById('withdrawal-content');
+
+    // ----- Network map (currency → available networks) -----
+    const networkMap = {
+        USDT: [
+            { value: 'ERC-20', label: 'Ethereum ERC-20' },
+            { value: 'BEP-20', label: 'BSC BEP-20' },
+            { value: 'TRC-20', label: 'Tron TRC-20' }
+        ],
+        BTC: [
+            { value: 'BTC', label: 'Bitcoin' }
+        ],
+        ETH: [
+            { value: 'ERC-20', label: 'Ethereum ERC-20' }
+        ]
+    };
+
+    // ----- Network-specific address regex patterns -----
+    const networkRegex = {
+        'ERC-20': /^0x[a-fA-F0-9]{40}$/,
+        'BEP-20': /^0x[a-fA-F0-9]{40}$/,
+        'TRC-20': /^T[a-zA-Z0-9]{33}$/,
+        'BTC': /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/
+    };
+
+    // ----- Helper: update network options -----
+    function updateNetworkOptions() {
+        const currency = currencySelect.value;
+        const networks = networkMap[currency] || [];
+
+        // Clear current options
+        networkSelect.innerHTML = '<option value="">Select network</option>';
+
+        if (networks.length > 0) {
+            networks.forEach(function(net) {
+                var opt = document.createElement('option');
+                opt.value = net.value;
+                opt.textContent = net.label;
+                networkSelect.appendChild(opt);
+            });
+            networkSelect.disabled = false;
+        } else {
+            networkSelect.disabled = true;
+        }
+
+        // Reset network validation hint
+        const networkHint = document.getElementById('network-hint');
+        if (currency) {
+            networkHint.textContent = 'Select the network for ' + currency;
+        } else {
+            networkHint.textContent = 'Network is auto-populated based on currency';
+        }
+    }
+
+    // ----- Helper: validate wallet address -----
+    function validateAddress(address, network) {
+        if (!network || !networkRegex[network]) return false;
+        return networkRegex[network].test(address);
+    }
+
+    // ----- Helper: show alert -----
+    function showAlert(type, message) {
+        alertEl.innerHTML = '<div class="alert alert-' + type + '">' + message + '</div>';
+        // Auto-dismiss after 6 seconds
+        setTimeout(function() {
+            alertEl.innerHTML = '';
+        }, 6000);
+    }
+
+    // ----- Helper: set button loading state -----
+    function setLoading(isLoading) {
+        if (isLoading) {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+        } else {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save Wallet';
+        }
+    }
+
+    // ----- Load existing wallet data on page load -----
+    function loadWallet() {
+        fetch('/api/user/wallet')
+            .then(function(resp) {
+                if (!resp.ok) throw new Error('Failed to load wallet');
+                return resp.json();
+            })
+            .then(function(data) {
+                if (data.wallet_address) {
+                    // Pre-populate form
+                    if (data.currency) {
+                        currencySelect.value = data.currency;
+                        updateNetworkOptions();
+                        if (data.network) {
+                            networkSelect.value = data.network;
+                        }
+                    }
+                    if (data.wallet_address) {
+                        addressInput.value = data.wallet_address;
+                        confirmInput.value = data.wallet_address;
+                    }
+                    showAlert('success', 'Wallet loaded successfully');
+                }
+            })
+            .catch(function(err) {
+                // Wallet not set yet — that's fine
+                console.log('No existing wallet found:', err.message);
+            });
+    }
+
+    // ----- Load withdrawal settings -----
+    function loadWithdrawalSettings() {
+        fetch('/api/withdrawal/settings')
+            .then(function(resp) {
+                if (!resp.ok) throw new Error('Failed to load withdrawal settings');
+                return resp.json();
+            })
+            .then(function(data) {
+                document.getElementById('withdrawal-min').textContent =
+                    data.minimum_withdrawal ? '$' + parseFloat(data.minimum_withdrawal).toLocaleString() : '$1,000';
+                document.getElementById('withdrawal-tax').textContent =
+                    data.tax_rate ? data.tax_rate + '%' : '20%';
+                document.getElementById('withdrawal-cycle').textContent =
+                    data.current_cycle || '—';
+                document.getElementById('withdrawal-processing').textContent =
+                    data.processing_date || '—';
+                document.getElementById('withdrawal-cutoff').textContent =
+                    data.cut_off_day ? 'Day ' + data.cut_off_day : '—';
+
+                withdrawalLoading.style.display = 'none';
+                withdrawalContent.style.display = 'block';
+            })
+            .catch(function(err) {
+                withdrawalLoading.innerHTML =
+                    '<span style="color: var(--text-tertiary);">Could not load withdrawal settings. Using defaults.</span>';
+                // Still show defaults
+                withdrawalContent.style.display = 'block';
+                withdrawalLoading.style.display = 'none';
+            });
+    }
+
+    // ----- Currency change → update networks -----
+    currencySelect.addEventListener('change', updateNetworkOptions);
+
+    // ----- Form submission -----
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        // Clear previous hints
+        addressHint.className = 'form-hint';
+        addressHint.style.color = '';
+        confirmHint.className = 'form-hint';
+        confirmHint.style.color = '';
+
+        // Gather values
+        var currency = currencySelect.value;
+        var network = networkSelect.value;
+        var address = addressInput.value.trim();
+        var confirmAddress = confirmInput.value.trim();
+
+        // Validate all fields
+        if (!currency) {
+            showAlert('danger', 'Please select a currency.');
+            return;
+        }
+        if (!network) {
+            showAlert('danger', 'Please select a network.');
+            return;
+        }
+        if (!address) {
+            showAlert('danger', 'Please enter a wallet address.');
+            addressInput.focus();
+            return;
+        }
+        if (!confirmAddress) {
+            showAlert('danger', 'Please confirm your wallet address.');
+            confirmInput.focus();
+            return;
+        }
+
+        // Check address match
+        if (address !== confirmAddress) {
+            showAlert('danger', 'Wallet addresses do not match. Please re-enter.');
+            confirmHint.textContent = 'Addresses do not match';
+            confirmHint.style.color = 'var(--red)';
+            confirmInput.focus();
+            return;
+        }
+
+        // Network-specific validation
+        if (!validateAddress(address, network)) {
+            showAlert('danger', 'Invalid wallet address for the selected network.');
+            addressHint.textContent = 'Invalid ' + network + ' address format';
+            addressHint.style.color = 'var(--red)';
+            addressInput.focus();
+            return;
+        }
+
+        // All valid — submit
+        setLoading(true);
+
+        fetch('/api/user/wallet', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token() if csrf_token is defined else "" }}'
+            },
+            body: JSON.stringify({
+                currency: currency,
+                network: network,
+                wallet_address: address
+            })
+        })
+        .then(function(resp) {
+            if (!resp.ok) {
+                return resp.json().then(function(errData) {
+                    throw new Error(errData.error || 'Failed to save wallet');
+                });
+            }
+            return resp.json();
+        })
+        .then(function(data) {
+            showAlert('success', data.message || 'Wallet saved successfully!');
+            // Update confirm to match in case of any change
+            confirmInput.value = address;
+        })
+        .catch(function(err) {
+            showAlert('danger', err.message || 'An error occurred while saving your wallet. Please try again.');
+        })
+        .finally(function() {
+            setLoading(false);
+        });
+    });
+
+    // ----- Initialise -----
+    loadWallet();
+    loadWithdrawalSettings();
+})();
+</script>
+{% endblock %}

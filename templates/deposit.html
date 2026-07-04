@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Deposit – Monarch Wealth Group{% endblock %}
+
+{% block content %}
+<div class="dashboard-page">
+    <div style="max-width: 720px; margin: 0 auto; padding: 1.5rem 0 3rem;">
+        <!-- Back link -->
+        <a href="{{ url_for('dashboard') }}" style="display: inline-flex; align-items: center; gap: 0.4rem; color: var(--text-dim); text-decoration: none; font-size: 0.8rem; margin-bottom: 1.5rem; transition: color 0.2s;">
+            ← Back to Dashboard
+        </a>
+
+        <!-- Deposit Card -->
+        <div style="background: var(--bg-elev); border: 1px solid var(--border); border-radius: 20px; padding: 2rem; box-shadow: 0 18px 80px rgba(0,0,0,0.22);">
+            <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border);">
+                <span style="font-size: 2rem;">💰</span>
+                <div>
+                    <h2 style="font-family: var(--font-serif); font-size: 1.4rem; color: var(--white); margin: 0;">Deposit Funds</h2>
+                    <p style="font-size: 0.78rem; color: var(--text-dim); margin: 0.2rem 0 0;">Add capital to your investment portfolio</p>
+                </div>
+            </div>
+
+            <div style="background: rgba(200,168,94,0.08); border: 1px solid rgba(200,168,94,0.2); border-radius: 10px; padding: 0.9rem 1rem; margin-bottom: 1.5rem; display: flex; gap: 0.7rem; align-items: flex-start;">
+                <span style="color: var(--gold); font-size: 1rem; flex-shrink: 0;">⚠️</span>
+                <div>
+                    <strong style="color: var(--text); font-size: 0.85rem;">Minimum Deposit: $500.00</strong>
+                    <p style="font-size: 0.72rem; color: var(--text-faint); margin: 0.2rem 0 0;">This ensures that only serious investors join our platform.</p>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 1.2rem;">
+                <label style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); display: block; margin-bottom: 0.4rem;">Amount (USD)</label>
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="number" id="depositAmount" value="500" step="10" min="500"
+                        style="flex: 1; padding: 0.85rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 1.2rem; font-weight: 700; outline: none; transition: border-color 0.2s;">
+                    <button onclick="document.getElementById('depositAmount').value=500; updatePaystackPreview()" class="btn-max">$500</button>
+                    <button onclick="document.getElementById('depositAmount').value=1000; updatePaystackPreview()" class="btn-max">$1K</button>
+                    <button onclick="document.getElementById('depositAmount').value=5000; updatePaystackPreview()" class="btn-max">$5K</button>
+                </div>
+                <div style="font-size: 0.65rem; color: var(--text-faint); margin-top: 0.3rem;" id="minDepositInfo">Minimum deposit: $500.00</div>
+            </div>
+
+            <!-- Method Selector -->
+            <div style="margin-bottom: 1.2rem;">
+                <label style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); display: block; margin-bottom: 0.6rem;">Payment Method</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem;" id="paymentMethodSelector">
+                    <button onclick="selectDepositMethod('card')" id="methodCard" class="payment-method-btn active" style="all:unset; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:0.4rem; padding:1rem; border-radius:12px; background:rgba(200,168,94,0.1); border:2px solid var(--gold); transition:all 0.2s;">
+                        <span style="font-size:1.6rem;">💳</span>
+                        <strong style="color:var(--text); font-size:0.78rem;">Card (Paystack)</strong>
+                        <small style="color:var(--text-faint); font-size:0.62rem;">Visa, Mastercard</small>
+                    </button>
+                    <button onclick="selectDepositMethod('crypto-usdt')" id="methodCrypto" class="payment-method-btn" style="all:unset; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:0.4rem; padding:1rem; border-radius:12px; background:rgba(255,255,255,0.02); border:2px solid rgba(255,255,255,0.06); transition:all 0.2s;">
+                        <span style="font-size:1.6rem;">🪙</span>
+                        <strong style="color:var(--text); font-size:0.78rem;">Crypto (USDT)</strong>
+                        <small style="color:var(--text-faint); font-size:0.62rem;">USDT · TRC20</small>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Paystack Insight -->
+            <div id="paystackInsights" style="display:block; margin-bottom:1.2rem; padding:0.9rem; border:1px solid rgba(201,168,76,0.2); border-radius:10px; background:rgba(201,168,76,0.05);">
+                <div style="font-size:0.7rem; font-weight:700; color:var(--gold); margin-bottom:0.25rem;">💳 Card Payment (Paystack)</div>
+                <div style="font-size:0.68rem; color:var(--text-dim); line-height:1.45;">You enter USD, your card is charged in Nigerian Naira (NGN) at the current exchange rate.</div>
+                <div style="margin-top:0.6rem; padding:0.6rem; border:1px solid rgba(201,168,76,0.12); border-radius:8px; background:rgba(255,255,255,0.02);">
+                    <div style="font-size:0.6rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-faint); margin-bottom:0.2rem;">Estimated Charge</div>
+                    <div style="font-weight:700; color:var(--text); font-size:0.85rem;">You entered: <span id="paystackUsdDisplay">$500.00</span></div>
+                    <div style="font-weight:700; color:var(--gold); font-size:0.85rem; margin-top:0.1rem;">Charge: <span id="paystackNgnDisplay">—</span></div>
+                    <div style="font-size:0.65rem; color:var(--text-faint); margin-top:0.2rem;">Rate: <span id="paystackRateDisplay">1 USD = —</span></div>
+                </div>
+            </div>
+
+            <!-- Submit -->
+            <button onclick="submitDeposit()" id="depositBtn" style="width:100%; padding:0.95rem; background:linear-gradient(135deg, var(--gold), var(--gold-secondary)); color:var(--bg-deep); border:none; border-radius:12px; font-size:1rem; font-weight:700; cursor:pointer; transition:all 0.25s; box-shadow: 0 4px 15px rgba(201,168,76,0.15); display:flex; align-items:center; justify-content:center; gap:0.6rem;">
+            <span>💰</span> Deposit Now
+        </button>
+
+        <!-- Quick amounts -->
+        <div style="margin-top: 1.2rem; display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center;">
+            <span style="font-size:0.65rem; color:var(--text-faint);">Quick deposit:</span>
+            <button onclick="quickDeposit(500)" style="font-size:0.72rem; padding:0.35rem 0.8rem; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--text-dim); cursor:pointer;">$500</button>
+            <button onclick="quickDeposit(1000)" style="font-size:0.72rem; padding:0.35rem 0.8rem; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--text-dim); cursor:pointer;">$1,000</button>
+            <button onclick="quickDeposit(2500)" style="font-size:0.72rem; padding:0.35rem 0.8rem; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--text-dim); cursor:pointer;">$2,500</button>
+            <button onclick="quickDeposit(5000)" style="font-size:0.72rem; padding:0.35rem 0.8rem; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--text-dim); cursor:pointer;">$5,000</button>
+        </div>
+    </div>
+
+    <!-- Security note -->
+    <div style="margin-top: 1.2rem; padding: 1rem; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px solid var(--border); display: flex; gap: 0.7rem; align-items: flex-start;">
+        <span style="color: #10B981; font-size: 1.1rem;">🔒</span>
+        <div>
+            <strong style="color: var(--text); font-size: 0.8rem;">256-bit Encrypted Transaction</strong>
+            <p style="font-size: 0.68rem; color: var(--text-faint); margin: 0.15rem 0 0;">All payments are processed through PCI-compliant gateways. Your financial data is never stored on our servers.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Crypto Modal -->
+<div id="cryptoModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.88); z-index:999; align-items:center; justify-content:center; padding:1rem;">
+<div style="background:#111827; border-radius:18px; max-width:440px; width:100%; border:1px solid rgba(201,168,76,0.25); box-shadow: 0 20px 60px rgba(0,0,0,0.6); overflow:hidden; max-height:90vh; overflow-y:auto;">
+    <div style="background:linear-gradient(135deg,rgba(201,168,76,0.15),rgba(201,168,76,0.05)); padding:1.2rem 1.5rem; text-align:center; border-bottom:1px solid rgba(201,168,76,0.12);">
+        <div style="font-size:1.6rem; margin-bottom:0.3rem;">💎</div>
+        <h3 style="color:var(--gold); margin:0; font-size:1rem; font-family:Georgia,serif;">Crypto Payment</h3>
+        <p style="color:var(--text-faint); font-size:0.68rem; margin:0.2rem 0 0; text-transform:uppercase; letter-spacing:1px;" id="cryptoCurrencyLabel">USDT · TRC20 Network</p>
+    </div>
+    <div style="padding:1rem 1.5rem 0.5rem;">
+        <div style="display:flex; gap:0.4rem; align-items:flex-start; margin-bottom:0.8rem;">
+            <div style="min-width:20px; height:20px; border-radius:50%; background:var(--gold); color:var(--bg); font-size:0.6rem; font-weight:700; display:flex;align-items:center;justify-content:center; margin-top:1px;">1</div>
+            <div><div style="font-size:0.75rem; color:var(--text); font-weight:600; margin-bottom:0.1rem;">Copy wallet address</div><div style="font-size:0.68rem; color:var(--text-dim);">Use your crypto wallet to send the exact amount.</div></div>
+        </div>
+        <div style="display:flex; gap:0.4rem; align-items:flex-start; margin-bottom:0.8rem;">
+            <div style="min-width:20px; height:20px; border-radius:50%; background:var(--gold); color:var(--bg); font-size:0.6rem; font-weight:700; display:flex;align-items:center;justify-content:center; margin-top:1px;">2</div>
+            <div><div style="font-size:0.75rem; color:var(--text); font-weight:600; margin-bottom:0.1rem;">Send <strong id="cryptoAmountGuide" style="color:var(--gold);">—</strong> <span id="cryptoCurrencyGuide" style="color:var(--gold);">USDT</span></div><div style="font-size:0.68rem; color:var(--text-dim);">Send the exact amount shown. Network processes automatically.</div></div>
+        </div>
+        <div style="display:flex; gap:0.4rem; align-items:flex-start;">
+            <div style="min-width:20px; height:20px; border-radius:50%; background:var(--gold); color:var(--bg); font-size:0.6rem; font-weight:700; display:flex;align-items:center;justify-content:center; margin-top:1px;">3</div>
+            <div><div style="font-size:0.75rem; color:var(--text); font-weight:600; margin-bottom:0.1rem;">Wait for confirmation</div><div style="font-size:0.68rem; color:var(--text-dim);">We monitor the blockchain. Your balance updates automatically.</div></div>
+        </div>
+    </div>
+    <div style="padding:0.6rem 1.5rem;">
+        <div style="font-size:0.6rem; text-transform:uppercase; letter-spacing:1px; color:var(--text-faint); margin-bottom:0.3rem;">Wallet Address</div>
+        <div style="display:flex; gap:0.5rem; align-items:stretch;">
+            <div id="cryptoAddress" style="flex:1; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:0.6rem 0.7rem; word-break:break-all; font-size:0.62rem; color:var(--text-dim); font-family:monospace; line-height:1.4;">—</div>
+            <button onclick="copyCryptoAddress()" id="copyBtn" style="flex-shrink:0; padding:0.5rem 0.8rem; background:var(--gold); color:var(--bg); border:none; border-radius:8px; cursor:pointer; font-size:0.7rem; font-weight:700; white-space:nowrap;">📋 Copy</button>
+        </div>
+    </div>
+    <div style="margin:0.6rem 1.5rem; background:rgba(201,168,76,0.07); border:1px solid rgba(201,168,76,0.15); border-radius:10px; padding:0.7rem; text-align:center;">
+        <div style="font-size:0.6rem; color:var(--text-faint); text-transform:uppercase; letter-spacing:1px; margin-bottom:0.15rem;">Send Exactly</div>
+        <div style="font-size:1.2rem; font-weight:700; color:var(--gold); font-family:Georgia,serif;" id="cryptoAmountDisplay">—</div>
+        <div style="font-size:0.65rem; color:var(--text-dim);" id="cryptoUsdEquiv">≈ $0.00 USD</div>
+    </div>
+    <div style="margin:0.6rem 1.5rem; background:var(--bg); border-radius:10px; padding:0.8rem; border:1px solid var(--border);">
+        <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+            <div id="statusDot" style="width:8px; height:8px; border-radius:50%; background:var(--gold); animation:pulse 1.5s infinite;"></div>
+            <div style="font-size:0.65rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px;">Payment Status</div>
+        </div>
+        <div id="cryptoStatus" style="font-size:0.85rem; font-weight:600; color:var(--gold);">Awaiting Transfer</div>
+        <div id="cryptoStatusSub" style="font-size:0.65rem; color:var(--text-faint); margin-top:0.15rem;">Monitoring blockchain for your transaction…</div>
+        <div style="margin-top:0.6rem; height:3px; background:rgba(255,255,255,0.05); border-radius:2px; overflow:hidden;">
+            <div id="statusProgress" style="height:100%; width:0%; background:var(--gold); border-radius:2px; transition:width 1s ease;"></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-top:0.2rem;">
+            <span style="font-size:0.5rem; color:var(--text-faint);">Waiting</span>
+            <span style="font-size:0.5rem; color:var(--text-faint);">Detecting</span>
+            <span style="font-size:0.5rem; color:var(--text-faint);">Confirming</span>
+            <span style="font-size:0.5rem; color:var(--text-faint);">Complete</span>
+        </div>
+    </div>
+    <div style="margin:0.5rem 1.5rem; display:flex; gap:0.4rem; align-items:flex-start;">
+        <span style="font-size:0.7rem; color:#F59E0B; margin-top:1px;">⚠️</span>
+        <p style="font-size:0.6rem; color:var(--text-faint); margin:0; line-height:1.4;">Do <strong style="color:var(--text-dim);">not</strong> close this window while processing. Auto-updates.</p>
+    </div>
+    <div style="padding:0.9rem 1.5rem; display:flex; gap:0.6rem;">
+        <button onclick="closeCryptoModal()" style="flex:1; padding:0.65rem; background:transparent; color:var(--text-dim); border:1px solid var(--border); border-radius:8px; cursor:pointer; font-size:0.75rem;">Cancel</button>
+        <a href="mailto:support@monarchwealth.com" style="flex:1; padding:0.65rem; background:rgba(201,168,76,0.1); color:var(--gold); border:1px solid rgba(201,168,76,0.2); border-radius:8px; cursor:pointer; font-size:0.75rem; text-align:center; text-decoration:none; display:flex; align-items:center; justify-content:center;">💬 Support</a>
+    </div>
+</div>
+</div>
+
+<style>
+.payment-method-btn {
+    all: unset;
+    cursor: pointer; 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    gap: 0.4rem; 
+    padding: 1rem; 
+    border-radius: 12px; 
+    transition: all 0.2s;
+}
+.payment-method-btn.active {
+    background: rgba(200,168,94,0.12) !important;
+    border-color: var(--gold) !important;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+}
+@media (max-width: 600px) {
+    #paymentMethodSelector { grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .payment-method-btn { padding: 0.8rem; }
+}
+</style>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='deposit.js') }}"></script>
+{% endblock %}

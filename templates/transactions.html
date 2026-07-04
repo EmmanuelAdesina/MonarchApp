@@ -1,0 +1,301 @@
+{% extends "dashboard_base.html" %}
+
+{% block title %}Transactions – Monarch Wealth Group{% endblock %}
+
+{% block dashboard_content %}
+<div class="page-header">
+    <h1 class="page-title">Transactions</h1>
+    <p class="page-subtitle">View your complete account history</p>
+</div>
+
+<div class="stats-grid" id="summary-cards">
+    <div class="stat-card">
+        <div class="stat-label">Total Deposits</div>
+        <div class="stat-value" id="summary-deposits">—</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Withdrawals</div>
+        <div class="stat-value" id="summary-withdrawals">—</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Growth</div>
+        <div class="stat-value" id="summary-growth">—</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Tax Paid</div>
+        <div class="stat-value" id="summary-tax">—</div>
+    </div>
+</div>
+
+<div class="tabs" id="filter-tabs">
+    <button class="tab active" data-type="">All</button>
+    <button class="tab" data-type="deposit">Deposits</button>
+    <button class="tab" data-type="withdrawal">Withdrawals</button>
+    <button class="tab" data-type="growth">Growth</button>
+    <button class="tab" data-type="tax">Tax Payments</button>
+</div>
+
+<div id="transactions-container" style="margin-top: 1rem;">
+    <!-- Transactions table populated by JS -->
+</div>
+
+<div id="pagination-controls" class="flex items-center justify-between gap-3" style="margin-top: 1rem; display: none;">
+    <button class="btn btn-secondary btn-sm" id="prev-page" disabled>← Previous</button>
+    <span id="page-indicator" style="font-size: 0.8rem; color: var(--text-tertiary);">Page 1</span>
+    <button class="btn btn-secondary btn-sm" id="next-page" disabled>Next →</button>
+</div>
+{% endblock %}
+
+{% block dashboard_scripts %}
+<script>
+(function() {
+    'use strict';
+
+    const API_BASE = '/api/transactions';
+    const SUMMARY_API = '/api/transactions/summary';
+
+    let currentType = '';
+    let currentPage = 1;
+    let totalPages = 1;
+    let isLoading = false;
+
+    const container = document.getElementById('transactions-container');
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    const pageIndicator = document.getElementById('page-indicator');
+    const paginationControls = document.getElementById('pagination-controls');
+    const filterTabs = document.querySelectorAll('#filter-tabs .tab');
+
+    // ── Format currency ──────────────────────────────────────────
+    function formatCurrency(amount, includeSign = true) {
+        const num = parseFloat(amount);
+        if (isNaN(num)) return '$0.00';
+        const abs = Math.abs(num).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+        if (!includeSign) return abs;
+        return num >= 0 ? '+' + abs : '-' + abs;
+    }
+
+    // ── Determine badge class from type ──────────────────────────
+    function badgeClass(type) {
+        var t = (type || '').toLowerCase();
+        if (t === 'deposit' || t === 'deposits') return 'badge-success';
+        if (t === 'withdrawal' || t === 'withdrawals') return 'badge-warning';
+        if (t === 'growth') return 'badge-info';
+        if (t === 'tax' || t === 'tax_payment') return 'badge-danger';
+        return 'badge-neutral';
+    }
+
+    // ── Determine amount color class ─────────────────────────────
+    function amountClass(type) {
+        var t = (type || '').toLowerCase();
+        if (t === 'deposit' || t === 'deposits' || t === 'growth') return 'text-green';
+        if (t === 'withdrawal' || t === 'withdrawals' || t === 'tax' || t === 'tax_payment') return 'text-red';
+        return '';
+    }
+
+    // ── Format date + time ───────────────────────────────────────
+    function formatDate(dateStr) {
+        if (!dateStr) return '—';
+        var d = new Date(dateStr);
+        return d.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+    }
+
+    function formatTime(dateStr) {
+        if (!dateStr) return '';
+        var d = new Date(dateStr);
+        return d.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    // ── Format type label for display ────────────────────────────
+    function formatType(type) {
+        var t = (type || '').toLowerCase();
+        if (t === 'deposit' || t === 'deposits') return 'Deposit';
+        if (t === 'withdrawal' || t === 'withdrawals') return 'Withdrawal';
+        if (t === 'growth') return 'Growth';
+        if (t === 'tax' || t === 'tax_payment') return 'Tax Payment';
+        return type || 'Unknown';
+    }
+
+    // ── Render transactions table ────────────────────────────────
+    function renderTransactions(data) {
+        var transactions = data.transactions || data.data || data.results || [];
+        var pagination = data.pagination || {};
+
+        totalPages = pagination.total_pages || pagination.pages || 1;
+        currentPage = pagination.current_page || pagination.page || 1;
+
+        if (transactions.length === 0) {
+            container.innerHTML =
+                '<div class="empty-state">' +
+                    '<div class="empty-state-icon">📭</div>' +
+                    '<div class="empty-state-title">No transactions found</div>' +
+                    '<div class="empty-state-text">There are no transactions matching your filter. Try selecting a different category.</div>' +
+                '</div>';
+            paginationControls.style.display = 'none';
+            return;
+        }
+
+        var html =
+            '<div class="table-wrapper">' +
+                '<table>' +
+                    '<thead>' +
+                        '<tr>' +
+                            '<th>Date</th>' +
+                            '<th>Type</th>' +
+                            '<th>Description</th>' +
+                            '<th>Time</th>' +
+                            '<th style="text-align: right;">Amount</th>' +
+                        '</tr>' +
+                    '</thead>' +
+                    '<tbody>';
+
+        for (var i = 0; i < transactions.length; i++) {
+            var tx = transactions[i];
+            var type = tx.type || tx.transaction_type || '';
+            var amt = parseFloat(tx.amount) || 0;
+            var desc = tx.description || tx.note || tx.memo || '';
+            var dateStr = tx.created_at || tx.date || tx.timestamp || '';
+            var sign = (type === 'deposit' || type === 'growth') ? '+' : '-';
+
+            html +=
+                '<tr>' +
+                    '<td style="white-space: nowrap;">' + formatDate(dateStr) + '</td>' +
+                    '<td><span class="badge ' + badgeClass(type) + '">' + formatType(type) + '</span></td>' +
+                    '<td>' + escHtml(desc) + '</td>' +
+                    '<td style="white-space: nowrap; color: var(--text-tertiary); font-size: 0.75rem;">' + formatTime(dateStr) + '</td>' +
+                    '<td style="text-align: right; font-weight: 600; white-space: nowrap;" class="' + amountClass(type) + '">' +
+                        sign + formatCurrency(amt, false) +
+                    '</td>' +
+                '</tr>';
+        }
+
+        html += '</tbody></table></div>';
+
+        container.innerHTML = html;
+
+        // Update pagination
+        paginationControls.style.display = 'flex';
+        pageIndicator.textContent = 'Page ' + currentPage + ' of ' + totalPages;
+        prevBtn.disabled = currentPage <= 1;
+        nextBtn.disabled = currentPage >= totalPages;
+    }
+
+    // ── Simple HTML escape ───────────────────────────────────────
+    function escHtml(str) {
+        if (!str) return '—';
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // ── Fetch transactions ───────────────────────────────────────
+    function fetchTransactions() {
+        if (isLoading) return;
+        isLoading = true;
+
+        var url = API_BASE + '?page=' + currentPage;
+        if (currentType) {
+            url += '&type=' + encodeURIComponent(currentType);
+        }
+
+        // Show loading state
+        container.innerHTML =
+            '<div class="empty-state">' +
+                '<div class="empty-state-icon" style="opacity: 0.4;">⏳</div>' +
+                '<div class="empty-state-title">Loading transactions…</div>' +
+            '</div>';
+        paginationControls.style.display = 'none';
+
+        fetch(url)
+            .then(function(response) {
+                if (!response.ok) throw new Error('Failed to fetch transactions');
+                return response.json();
+            })
+            .then(function(data) {
+                renderTransactions(data);
+            })
+            .catch(function(err) {
+                container.innerHTML =
+                    '<div class="alert alert-danger">Failed to load transactions. Please try again later.</div>';
+                console.error('Transactions fetch error:', err);
+            })
+            .finally(function() {
+                isLoading = false;
+            });
+    }
+
+    // ── Fetch summary cards ─────────────────────────────────────
+    function fetchSummary() {
+        fetch(SUMMARY_API)
+            .then(function(response) {
+                if (!response.ok) throw new Error('Failed to fetch summary');
+                return response.json();
+            })
+            .then(function(data) {
+                var d = data.summary || data.data || data;
+                document.getElementById('summary-deposits').textContent =
+                    formatCurrency(d.total_deposits || d.deposits || 0, false);
+                document.getElementById('summary-withdrawals').textContent =
+                    formatCurrency(d.total_withdrawals || d.withdrawals || 0, false);
+                document.getElementById('summary-growth').textContent =
+                    formatCurrency(d.total_growth || d.growth || 0, true);
+                document.getElementById('summary-tax').textContent =
+                    formatCurrency(d.total_tax || d.tax_paid || d.tax || 0, false);
+            })
+            .catch(function(err) {
+                console.error('Summary fetch error:', err);
+                // Leave placeholder dashes
+            });
+    }
+
+    // ── Filter tab handling ──────────────────────────────────────
+    function handleTabClick(tab) {
+        if (tab.classList.contains('active')) return;
+
+        // Update active state
+        filterTabs.forEach(function(t) { t.classList.remove('active'); });
+        tab.classList.add('active');
+
+        currentType = tab.getAttribute('data-type') || '';
+        currentPage = 1;
+
+        fetchTransactions();
+    }
+
+    filterTabs.forEach(function(tab) {
+        tab.addEventListener('click', function() { handleTabClick(tab); });
+    });
+
+    // ── Pagination handling ──────────────────────────────────────
+    prevBtn.addEventListener('click', function() {
+        if (currentPage > 1 && !isLoading) {
+            currentPage--;
+            fetchTransactions();
+        }
+    });
+
+    nextBtn.addEventListener('click', function() {
+        if (currentPage < totalPages && !isLoading) {
+            currentPage++;
+            fetchTransactions();
+        }
+    });
+
+    // ── Initial load ─────────────────────────────────────────────
+    fetchSummary();
+    fetchTransactions();
+})();
+</script>
+{% endblock %}

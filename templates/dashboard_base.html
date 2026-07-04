@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard – Monarch Wealth Group{% endblock %}
+
+{% block content %}
+<div class="app-layout">
+    {# Sidebar Backdrop for mobile #}
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    {# === SIDEBAR === #}
+    <aside class="sidebar" id="sidebar">
+        {# Brand #}
+        <div class="sidebar-brand">
+            <span class="sidebar-crest">👑</span>
+            <div>
+                <div>
+                    <span class="sidebar-brand-text">Monarch</span><span class="sidebar-brand-accent">Wealth</span>
+                </div>
+                <div class="sidebar-brand-small">Investment Group</div>
+            </div>
+        </div>
+
+        {# Navigation #}
+        <nav class="sidebar-nav">
+            {# — Main — #}
+            <div class="nav-section-label">Main</div>
+            <a href="{{ url_for('dashboard.dashboard') }}"
+               class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+                <span class="nav-item-icon">📊</span>
+                <span class="nav-item-label">Dashboard</span>
+            </a>
+            <a href="{{ url_for('dashboard.deposit') }}"
+               class="nav-item {% if active_page == 'deposit' %}active{% endif %}">
+                <span class="nav-item-icon">💳</span>
+                <span class="nav-item-label">Deposit</span>
+            </a>
+            <a href="{{ url_for('dashboard.withdraw') }}"
+               class="nav-item {% if active_page == 'withdraw' %}active{% endif %}">
+                <span class="nav-item-icon">💸</span>
+                <span class="nav-item-label">Withdraw</span>
+            </a>
+
+            {# — History — #}
+            <div class="nav-section-label">History</div>
+            <a href="{{ url_for('dashboard.transactions') }}"
+               class="nav-item {% if active_page == 'transactions' %}active{% endif %}">
+                <span class="nav-item-icon">📋</span>
+                <span class="nav-item-label">Transactions</span>
+            </a>
+
+            {# — Settings — #}
+            <div class="nav-section-label">Settings</div>
+            <a href="{{ url_for('dashboard.settings') }}"
+               class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+                <span class="nav-item-icon">⚙️</span>
+                <span class="nav-item-label">Settings</span>
+            </a>
+            <a href="{{ url_for('dashboard.profile') }}"
+               class="nav-item {% if active_page == 'profile' %}active{% endif %}">
+                <span class="nav-item-icon">👤</span>
+                <span class="nav-item-label">Profile</span>
+            </a>
+
+            {# — Support — #}
+            <div class="nav-section-label">Support</div>
+            <a href="{{ url_for('dashboard.notifications') }}"
+               class="nav-item {% if active_page == 'notifications' %}active{% endif %}">
+                <span class="nav-item-icon">🔔</span>
+                <span class="nav-item-label">Notifications</span>
+                {% if unread_notifications_count and unread_notifications_count > 0 %}
+                <span class="nav-item-badge">{{ unread_notifications_count }}</span>
+                {% endif %}
+            </a>
+            <a href="{{ url_for('dashboard.support') }}"
+               class="nav-item {% if active_page == 'support' %}active{% endif %}">
+                <span class="nav-item-icon">❓</span>
+                <span class="nav-item-label">Support</span>
+            </a>
+        </nav>
+
+        {# Sidebar Footer: user card + logout #}
+        <div class="sidebar-footer">
+            <div class="sidebar-user-card">
+                <div class="sidebar-avatar">{{ user.username[:1] | upper if user.username else 'U' }}</div>
+                <div class="sidebar-user-info">
+                    <div class="sidebar-user-name truncate">{{ user.username }}</div>
+                    <div class="sidebar-user-status">Online</div>
+                </div>
+            </div>
+            <a href="{{ url_for('auth.logout') }}" class="sidebar-logout">
+                <span>🚪</span> Sign Out
+            </a>
+        </div>
+    </aside>
+
+    {# === MAIN CONTENT AREA === #}
+    <main class="main-content">
+        {# Top Bar #}
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="mobile-sidebar-toggle" id="sidebarToggle" aria-label="Toggle navigation menu">
+                    ☰
+                </button>
+                <div class="topbar-search">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" placeholder="Search..." aria-label="Search dashboard">
+                </div>
+            </div>
+            <div class="topbar-right">
+                <a href="{{ url_for('dashboard.notifications') }}" class="topbar-btn" aria-label="Notifications">
+                    🔔
+                    {% if unread_notifications_count and unread_notifications_count > 0 %}
+                    <span class="badge-dot"></span>
+                    {% endif %}
+                </a>
+                <a href="{{ url_for('dashboard.deposit') }}" class="topbar-balance">
+                    <span>${{ "%.2f"|format(user.balance) }}</span>
+                </a>
+            </div>
+        </header>
+
+        {# Page Content — child templates fill this block #}
+        <div class="page-content">
+            {% block dashboard_content %}{% endblock %}
+        </div>
+    </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function() {
+    'use strict';
+
+    var sidebar = document.getElementById('sidebar');
+    var backdrop = document.getElementById('sidebarBackdrop');
+    var toggleBtn = document.getElementById('sidebarToggle');
+
+    if (!sidebar || !backdrop || !toggleBtn) return;
+
+    function openSidebar() {
+        sidebar.classList.add('open');
+        backdrop.classList.add('show');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeSidebar() {
+        sidebar.classList.remove('open');
+        backdrop.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+
+    toggleBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (sidebar.classList.contains('open')) {
+            closeSidebar();
+        } else {
+            openSidebar();
+        }
+    });
+
+    backdrop.addEventListener('click', closeSidebar);
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && sidebar.classList.contains('open')) {
+            closeSidebar();
+        }
+    });
+
+    // Close sidebar automatically when a nav link is clicked on mobile/tablet
+    var navLinks = sidebar.querySelectorAll('.sidebar-nav .nav-item');
+    for (var i = 0; i < navLinks.length; i++) {
+        navLinks[i].addEventListener('click', function() {
+            if (window.innerWidth <= 1024) {
+                closeSidebar();
+            }
+        });
+    }
+
+    // Handle window resize — reset sidebar state when going from mobile to desktop
+    var prevWidth = window.innerWidth;
+    window.addEventListener('resize', function() {
+        var currentWidth = window.innerWidth;
+        if (prevWidth <= 1024 && currentWidth > 1024) {
+            // Transitioning from mobile/tablet to desktop — ensure sidebar is visible
+            sidebar.classList.remove('open');
+            backdrop.classList.remove('show');
+            document.body.style.overflow = '';
+        }
+        prevWidth = currentWidth;
+    });
+})();
+</script>
+{% endblock %}
