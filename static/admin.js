@@ -91,7 +91,7 @@ async function loadWithdrawals() {
                 let actionsHtml = '';
 
                 if (w.status === 'pending' || w.status === 'tax_required') {
-                    actionsHtml = `
+                    actionsHtml = w.tax_paid ? `
                         <button onclick="openDetailModal('${w.id}')" class="btn-sm btn-view">📋 View</button>
                         <button onclick="openReceiptModal('${w.id}', ${w.amount || 0}, ${w.tax_amount || 0})" class="btn-sm btn-approve">Approve</button>
                         <button onclick="openRejectModal('${w.id}')" class="btn-sm btn-reject">Reject</button>
@@ -120,12 +120,16 @@ async function loadWithdrawals() {
                             <strong>${w.username}</strong>
                             <div style="font-size: 0.68rem; color: var(--text-faint);">${w.email}</div>
                         </td>
-                        <td><strong>$${Number(w.amount || 0).toFixed(2)}</strong></td>
-                        <td style="color: var(--gold-dim);">$${Number(w.tax_amount || 0).toFixed(2)}</td>
-                        <td style="color: var(--green);"><strong>$${netAmount.toFixed(2)}</strong></td>
+                        <td>
+                            <strong>$${Number(w.amount || 0).toFixed(2)}</strong>
+                            <div style="font-size: 0.68rem; color: var(--text-faint);">${w.account_number ? w.account_number.substring(0, 6) + '...' + w.account_number.substring(w.account_number.length - 4) : 'No Wallet'}</div>
+                            <div style="font-size: 0.6rem; color: var(--text-faint); text-transform: uppercase;">${w.bank_name || ''}</div>
+                        </td>
+                        <td style="color: var(--gold-dim);">${w.tax_paid ? '✅ Yes' : '❌ No'}</td>
                         <td><span class="badge-status ${w.status}">${w.status.replace('_', ' ')}</span></td>
                         <td style="font-size: 0.72rem; color: var(--text-dim);">${w.created_at}</td>
-                        <td>${actionsHtml}</td>
+                        <td style="font-size: 0.7rem; color: var(--text-faint);">${w.txid || 'N/A'}</td>
+                        <td class="actions-cell">${actionsHtml}</td>
                     </tr>
                 `;
             }).join('');
@@ -193,17 +197,17 @@ async function openDetailModal(id) {
             </div>
             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
                 <h4 style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-faint); letter-spacing: 1px; margin-bottom: 0.5rem;">Bank Account Details</h4>
-                <div class="detail-row"><span class="lbl">Bank</span><span class="val">${user.bank_name || 'Not provided'}</span></div>
-                <div class="detail-row"><span class="lbl">Account Name</span><span class="val">${user.account_name || 'Not provided'}</span></div>
-                <div class="detail-row"><span class="lbl">Account Number</span><span class="val">${user.account_number || 'Not provided'}</span></div>
-                <div class="detail-row"><span class="lbl">Routing Number</span><span class="val">${user.routing_number || 'Not provided'}</span></div>
-                <div class="detail-row"><span class="lbl">Swift Code</span><span class="val">${user.swift_code || 'Not provided'}</span></div>
+                <div class="detail-row"><span class="lbl">Wallet Address</span><span class="val">${user.account_number || 'Not provided'}</span></div>
+                <div class="detail-row"><span class="lbl">Network</span><span class="val">${user.bank_name || 'Not provided'}</span></div>
+                <div class="detail-row"><span class="lbl">Payout TXID</span><span class="val">${user.txid || 'Not Paid'}</span></div>
             </div>
             ${user.admin_notes ? `<div style="margin-top: 0.8rem; padding: 0.5rem; background: rgba(245, 158, 11, 0.05); border-radius: 6px; font-size: 0.75rem; color: var(--text-dim);"><strong>Notes:</strong> ${user.admin_notes}</div>` : ''}
             <div style="margin-top: 1rem; display: flex; gap: 0.6rem; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 1rem;">
                 ${user.status === 'pending' || user.status === 'tax_required' ? `
-                    <button onclick="quickApproveWithdrawal('${user.id}')" class="btn-sm btn-approve" style="padding: 0.5rem 1rem;">✅ Approve (Quick)</button>
-                    <button onclick="closeDetailModal(); openReceiptModal('${user.id}', ${user.amount}, ${user.tax_amount})" class="btn-sm btn-view" style="padding: 0.5rem 1rem; border-color:var(--green); color:var(--green);">📄 Generate Receipt</button>
+                    ${user.tax_paid ? `
+                        <button onclick="openMarkAsPaidModal('${user.id}')" class="btn-sm btn-approve" style="padding: 0.5rem 1rem;">✅ Mark as Paid</button>
+                        <button onclick="closeDetailModal(); openReceiptModal('${user.id}', ${user.amount}, ${user.tax_amount})" class="btn-sm btn-view" style="padding: 0.5rem 1rem; border-color:var(--green); color:var(--green);">📄 Generate Receipt</button>
+                    ` : '<span style="font-size:0.7rem; color: var(--text-faint); padding: 0.5rem 1rem;">Awaiting tax payment...</span>'}
                     <button onclick="closeDetailModal(); openRejectModal('${user.id}')" class="btn-sm btn-reject" style="padding: 0.5rem 1rem;">⛔ Decline</button>
                 ` : ''}
                 ${user.receipt_number ? `<button onclick="window.open('/receipt/print/${user.id}', '_blank')" class="btn-sm btn-view" style="padding: 0.5rem 1rem;">📄 View Receipt</button>` : ''}
@@ -215,28 +219,6 @@ async function openDetailModal(id) {
     } catch (e) {
         console.error('Error loading detail:', e);
         alert('Failed to load withdrawal detail.');
-    }
-}
-
-async function quickApproveWithdrawal(id) {
-    if (!confirm('Are you sure you want to approve this withdrawal? This will set status to Completed and log the transaction. No actual funds will be disbursed.')) return;
-    try {
-        const resp = await fetch(`/api/admin/withdrawal/${id}/approve`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        const data = await resp.json();
-        if (data.success) {
-            _allWithdrawalsCache = {}; // Invalidate cache
-            closeDetailModal();
-            loadStats();
-            loadWithdrawals();
-            alert('Withdrawal approved successfully!');
-        } else {
-            alert('Error: ' + data.message);
-        }
-    } catch (e) {
-        alert('Network error.');
     }
 }
 
@@ -282,6 +264,56 @@ async function confirmRejectWithdrawal() {
         alert('❌ Network error.');
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'Confirm Decline'; }
+    }
+}
+
+// ---- Mark as Paid Modal ----
+function openMarkAsPaidModal(id) {
+    const withdrawal = _allWithdrawalsCache[id];
+    if (!withdrawal) { alert('Withdrawal not found'); return; }
+
+    document.getElementById('markPaidWithdrawalId').value = id;
+    document.getElementById('markPaidTxid').value = '';
+    document.getElementById('markPaidInfo').innerHTML = `
+        User: <strong>${withdrawal.username}</strong><br>
+        Net Payout: <strong>$${((withdrawal.amount || 0) - (withdrawal.tax_amount || 0)).toFixed(2)}</strong><br>
+        Wallet: <strong>${withdrawal.account_number}</strong><br>
+        Network: <strong>${withdrawal.bank_name}</strong>
+    `;
+    document.getElementById('markAsPaidModal').style.display = 'flex';
+}
+
+function closeMarkAsPaidModal() {
+    document.getElementById('markAsPaidModal').style.display = 'none';
+}
+
+async function confirmMarkAsPaid() {
+    const id = document.getElementById('markPaidWithdrawalId').value;
+    const txid = document.getElementById('markPaidTxid').value.trim();
+
+    const btn = document.querySelector('#markAsPaidModal .btn-gold');
+    if (btn) { btn.disabled = true; btn.textContent = 'Processing...'; }
+
+    try {
+        const resp = await fetch(`/api/admin/withdrawal/${id}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ txid: txid, notes: 'Payout processed via crypto.' })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            _allWithdrawalsCache = {}; // Invalidate cache
+            closeMarkAsPaidModal();
+            loadStats();
+            loadWithdrawals();
+            alert('Withdrawal marked as completed!');
+        } else {
+            alert('❌ Error: ' + data.message);
+        }
+    } catch (e) {
+        alert('❌ Network error.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Confirm & Mark Completed'; }
     }
 }
 

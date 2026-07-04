@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}Apply to Join – Monarch Wealth Group{% endblock %}
+
+{% block content %}
+<div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); padding: 2rem; position: relative; overflow: hidden;">
+    <!-- Canvas for particle background -->
+    <canvas id="apply-particles" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;"></canvas>
+
+    <div style="background: rgba(17, 24, 39, 0.75); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 3rem 2.5rem; border-radius: 20px; border: 1px solid var(--border-gold); max-width: 500px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.6); z-index: 2; position: relative;">
+        
+        <!-- Brand crest / header -->
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <div style="display: inline-block; margin-bottom: 1rem;">
+                <svg width="45" height="45" viewBox="0 0 28 28" fill="none">
+                    <rect x="2" y="12" width="24" height="4" rx="1" fill="#C8A85E"/>
+                    <path d="M4 16 L14 4 L24 16" stroke="#C8A85E" stroke-width="2" stroke-linejoin="round"/>
+                    <path d="M8 20 L14 10 L20 20" stroke="#C8A85E" stroke-width="1.5" stroke-linejoin="round"/>
+                    <circle cx="14" cy="8" r="2" fill="#C8A85E"/>
+                </svg>
+            </div>
+            <div style="font-size: 1.8rem; font-weight: 600; font-family: 'Playfair Display', Georgia, serif; color: var(--text); margin-bottom: 0.5rem; letter-spacing: 1px;">
+                Monarch<span style="color: var(--gold);">Wealth</span>
+            </div>
+            <p style="color: var(--text-dim); font-size: 0.85rem; letter-spacing: 0.5px; line-height: 1.4;">
+                Admission is restricted to committed partners. Complete your request for consideration by our private admissions panel.
+            </p>
+        </div>
+
+        <!-- FOMO indicators inside the form -->
+        <div style="background: rgba(200, 168, 94, 0.08); border: 1px solid rgba(200, 168, 94, 0.2); border-radius: 8px; padding: 0.9rem; margin-bottom: 2rem; display: flex; align-items: center; justify-content: center; gap: 0.6rem; font-size: 0.8rem; color: var(--gold);">
+            <span style="display: inline-block; width: 8px; height: 8px; background: #C8A85E; border-radius: 50%; box-shadow: 0 0 10px #C8A85E; animation: pulse 1.5s infinite;"></span>
+            <span>Monthly Cap: Only <strong id="spots-count">10</strong> spots remaining for this cycle.</span>
+        </div>
+
+        <div id="error-alert" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #F87171; padding: 0.8rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.8rem; text-align: center;"></div>
+
+        <form id="applyForm" style="display: flex; flex-direction: column; gap: 1.3rem;">
+            <div>
+                <label for="name" style="display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); margin-bottom: 0.5rem;">Full Name</label>
+                <input type="text" id="name" required placeholder="John Doe"
+                    style="width: 100%; padding: 0.85rem; background: rgba(10, 13, 26, 0.6); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.3s;"
+                    onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border)'">
+            </div>
+
+            <div>
+                <label for="email" style="display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); margin-bottom: 0.5rem;">Email Address</label>
+                <input type="email" id="email" required placeholder="john@example.com"
+                    style="width: 100%; padding: 0.85rem; background: rgba(10, 13, 26, 0.6); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.3s;"
+                    onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border)'">
+            </div>
+
+            <div>
+                <label for="intended_deposit" style="display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); margin-bottom: 0.5rem;">
+                    Intended Initial Deposit (USD)
+                </label>
+                <select id="intended_deposit" required
+                    style="width: 100%; padding: 0.85rem; background: rgba(10, 13, 26, 0.9); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.3s;"
+                    onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border)'">
+                    <option value="500" selected>$500 - $1,999</option>
+                    <option value="2000">$2,000 - $9,999</option>
+                    <option value="10000">$10,000 - $49,999</option>
+                    <option value="50000">$50,000+</option>
+                </select>
+                <p style="color: var(--text-faint); font-size: 0.68rem; margin-top: 0.3rem;">⚠️ The minimum initial placement is $500.00.</p>
+            </div>
+
+            <div>
+                <label for="referral_source" style="display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); margin-bottom: 0.5rem;">
+                    Referral / Placement Code <span style="color: var(--text-faint); font-weight: 400;">(optional)</span>
+                </label>
+                <input type="text" id="referral_source" placeholder="e.g. X7K9M2P1"
+                    style="width: 100%; padding: 0.85rem; background: rgba(10, 13, 26, 0.6); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.3s; text-transform: uppercase;"
+                    onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border)'">
+            </div>
+
+            <div>
+                <label for="notes" style="display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); margin-bottom: 0.5rem;">
+                    Statement of Wealth Strategy
+                </label>
+                <textarea id="notes" required rows="3" placeholder="Describe your capital building intent or strategy..."
+                    style="width: 100%; padding: 0.85rem; background: rgba(10, 13, 26, 0.6); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; resize: none; transition: border-color 0.3s;"
+                    onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+            </div>
+
+            <button type="submit" id="submitBtn"
+                style="margin-top: 0.5rem; width: 100%; padding: 1rem; background: var(--gold); color: var(--bg); border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.3s; letter-spacing: 0.5px;">
+                Submit Placement Request
+            </button>
+        </form>
+
+        <div style="text-align: center; margin-top: 1.5rem; font-size: 0.8rem; color: var(--text-dim);">
+            Have an invitation code? <a href="/register" style="color: var(--gold); text-decoration: none; font-weight: 500;">Register Directly</a>
+        </div>
+        
+        <div style="text-align: center; margin-top: 1rem;">
+            <a href="/" style="color: var(--text-faint); text-decoration: none; font-size: 0.75rem;">← Return to Home</a>
+        </div>
+
+    </div>
+</div>
+
+<style>
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(200, 168, 94, 0.7); }
+    70% { transform: scale(1.1); opacity: 0.8; box-shadow: 0 0 0 8px rgba(200, 168, 94, 0); }
+    100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(200, 168, 94, 0); }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // Populate referral source if stored in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const ref = urlParams.get('ref') || urlParams.get('code');
+    if (ref) {
+        document.getElementById('referral_source').value = ref;
+    }
+
+    // Load available spots for FOMO counter
+    fetch('/api/waiting-list/spots')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && data.spots_left !== undefined) {
+                document.getElementById('spots-count').textContent = data.spots_left;
+            }
+        }).catch(err => console.error(err));
+
+    // Handle form submit
+    const form = document.getElementById('applyForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const errorAlert = document.getElementById('error-alert');
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Processing request...';
+        errorAlert.style.display = 'none';
+
+        const payload = {
+            name: document.getElementById('name').value,
+            email: document.getElementById('email').value,
+            intended_deposit: parseFloat(document.getElementById('intended_deposit').value),
+            referral_source: document.getElementById('referral_source').value,
+            notes: document.getElementById('notes').value
+        };
+
+        try {
+            const resp = await fetch('/api/waiting-list/apply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const result = await resp.json();
+
+            if (result.success) {
+                // Redirect to status page
+                window.location.href = `/application/status/${result.application_id}`;
+            } else {
+                errorAlert.textContent = result.message || 'Submission error. Please try again.';
+                errorAlert.style.display = 'block';
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit Placement Request';
+            }
+        } catch (err) {
+            errorAlert.textContent = 'A network connection error occurred.';
+            errorAlert.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit Placement Request';
+        }
+    });
+
+    // Drawing particle background
+    const canvas = document.getElementById('apply-particles');
+    const ctx = canvas.getContext('2d');
+    let width = canvas.width = window.innerWidth;
+    let height = canvas.height = window.innerHeight;
+
+    window.addEventListener('resize', () => {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+    });
+
+    const particles = [];
+    for (let i = 0; i < 40; i++) {
+        particles.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            vx: (Math.random() - 0.5) * 0.4,
+            vy: (Math.random() - 0.5) * 0.4,
+            radius: Math.random() * 2 + 1,
+            color: Math.random() > 0.5 ? 'rgba(200, 168, 94, 0.25)' : 'rgba(255, 255, 255, 0.08)'
+        });
+    }
+
+    function animate() {
+        ctx.clearRect(0, 0, width, height);
+        particles.forEach(p => {
+            p.x += p.vx;
+            p.y += p.vy;
+
+            if (p.x < 0 || p.x > width) p.vx *= -1;
+            if (p.y < 0 || p.y > height) p.vy *= -1;
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.fill();
+        });
+        requestAnimationFrame(animate);
+    }
+    animate();
+});
+</script>
+{% endblock %}

@@ -23,7 +23,7 @@
     </div>
     <div class="nav-actions">
       <a href="{{ url_for('login') }}" class="btn-ghost-nav">Log In</a>
-      <a href="{{ url_for('register') }}" class="btn-nav-primary">Get Started</a>
+      <a href="/apply" class="btn-nav-primary">Request Access</a>
       <button class="hamburger" id="hamburger" aria-label="Menu">
         <span></span><span></span><span></span>
       </button>
@@ -47,13 +47,13 @@
         <span class="gold-text">wealth</span> quietly grows.
       </h1>
       <p class="hero-sub animate-fade-up stagger-2">
-        Join <strong>14,000+</strong> professionals building real wealth through curated investments.
-        Start with as little as <strong>$100</strong>.
+        A private investment platform trusted by <strong>14,000+</strong> professionals across 47 countries.
+        Membership starts at <strong>$500</strong>. <em>Seats strictly limited.</em>
       </p>
       <div class="hero-cta animate-fade-up stagger-3">
-        <a href="{{ url_for('register') }}" class="btn-hero-primary">
+        <a href="/apply" class="btn-hero-primary">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2V18M18 10H2" stroke="#0A0D1A" stroke-width="2.5" stroke-linecap="round"/></svg>
-          Start Building Wealth
+          Apply for Membership
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3L11 8L6 13" stroke="#0A0D1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
       </div>
@@ -67,6 +67,22 @@
           <div class="bank-logo-item" title="Citibank">Citi</div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <!-- ====== FOMO URGENCY BAR ====== -->
+  <section style="background: linear-gradient(135deg, rgba(200,168,94,0.12), rgba(200,168,94,0.05)); border-top: 1px solid rgba(200,168,94,0.2); border-bottom: 1px solid rgba(200,168,94,0.2); padding: 1rem 2rem;">
+    <div style="max-width: 960px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+      <div style="display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+          <span style="width: 8px; height: 8px; background: #EF4444; border-radius: 50%; display: inline-block; animation: blink 1s infinite;"></span>
+          <span style="color: #F87171; font-weight: 600;">Only <span id="fomoSpotsLeft" style="font-size: 1rem; font-weight: 700;">—</span> spots remaining this month</span>
+        </div>
+        <div style="color: var(--text-dim); font-size: 0.8rem;">|
+          <span style="color: var(--text-faint); margin-left: 0.8rem;"><span id="fomoQueueCount">127</span> people in queue</span>
+        </div>
+      </div>
+      <a href="/apply" style="background: var(--gold); color: var(--bg); padding: 0.5rem 1.2rem; border-radius: 20px; font-size: 0.82rem; font-weight: 600; text-decoration: none; white-space: nowrap; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">Reserve Your Spot →</a>
     </div>
   </section>
 
@@ -430,6 +446,53 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { threshold: 0.3 });
     obs.observe(trustBar);
   }
+
+  // ====== FOMO SPOTS COUNTER ======
+  const spotsEl = document.getElementById('fomoSpotsLeft');
+  const queueEl = document.getElementById('fomoQueueCount');
+
+  if (spotsEl || queueEl) {
+    fetch('/api/waiting-list/spots')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          if (spotsEl) spotsEl.textContent = data.spots_left;
+          if (queueEl) queueEl.textContent = data.waitlist_count;
+        }
+      }).catch(() => {
+        if (spotsEl) spotsEl.textContent = '7';
+        if (queueEl) queueEl.textContent = '134';
+      });
+
+    // Animate queue count upward slowly to create FOMO
+    if (queueEl) {
+      let baseCount = parseInt(queueEl.textContent) || 127;
+      setInterval(() => {
+        if (Math.random() > 0.6) {
+          baseCount += Math.floor(Math.random() * 2) + 1;
+          queueEl.textContent = baseCount;
+        }
+      }, 8000);
+    }
+
+    // Animate spots decrement occasionally
+    if (spotsEl) {
+      let spots = parseInt(spotsEl.textContent) || 7;
+      setInterval(() => {
+        if (spots > 1 && Math.random() > 0.85) {
+          spots -= 1;
+          spotsEl.textContent = spots;
+        }
+      }, 45000);
+    }
+  }
 });
 </script>
+
+<style>
+@keyframes blink {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239,68,68,0.7); }
+  50% { opacity: 0.6; box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+}
+</style>
 {% endblock %}

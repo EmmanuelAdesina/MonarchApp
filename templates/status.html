@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Application Status – Monarch Wealth Group{% endblock %}
+
+{% block content %}
+<div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); padding: 2rem; position: relative; overflow: hidden;">
+    <!-- Canvas for particle background -->
+    <canvas id="status-particles" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;"></canvas>
+
+    <div style="background: rgba(17, 24, 39, 0.75); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 3rem 2.5rem; border-radius: 20px; border: 1px solid var(--border-gold); max-width: 500px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.6); z-index: 2; position: relative;">
+        
+        <!-- Crest -->
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <div style="display: inline-block; margin-bottom: 1rem;">
+                <svg width="45" height="45" viewBox="0 0 28 28" fill="none">
+                    <rect x="2" y="12" width="24" height="4" rx="1" fill="#C8A85E"/>
+                    <path d="M4 16 L14 4 L24 16" stroke="#C8A85E" stroke-width="2" stroke-linejoin="round"/>
+                    <path d="M8 20 L14 10 L20 20" stroke="#C8A85E" stroke-width="1.5" stroke-linejoin="round"/>
+                    <circle cx="14" cy="8" r="2" fill="#C8A85E"/>
+                </svg>
+            </div>
+            <div style="font-size: 1.6rem; font-weight: 600; font-family: 'Playfair Display', Georgia, serif; color: var(--text); margin-bottom: 0.2rem;">
+                Monarch<span style="color: var(--gold);">Wealth</span>
+            </div>
+            <p style="color: var(--text-faint); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px;">Admissions Board</p>
+        </div>
+
+        <div style="border-top: 1px solid var(--border); padding-top: 1.5rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.8rem; color: var(--text-dim);">
+                <span>Applicant:</span>
+                <strong style="color: var(--text);">{{ application.name }}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.8rem; color: var(--text-dim);">
+                <span>Email:</span>
+                <strong style="color: var(--text);">{{ application.email }}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-dim);">
+                <span>Placement Target:</span>
+                <strong style="color: var(--gold);">${{ "{:,.2f}".format(application.intended_deposit) }} USD</strong>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- PENDING STATUS                             -->
+        <!-- ========================================== -->
+        {% if application.status == 'pending' %}
+        <div style="text-align: center; padding: 2rem 1rem;">
+            <div class="spinner" style="width: 50px; height: 50px; border: 3px solid rgba(200, 168, 94, 0.1); border-top-color: var(--gold); border-radius: 50%; display: inline-block; animation: spin 1s linear infinite; margin-bottom: 1.5rem;"></div>
+            <h3 style="font-family: Georgia, serif; color: var(--text); margin-bottom: 0.8rem; font-size: 1.25rem;">Application Under Review</h3>
+            <p style="color: var(--text-dim); font-size: 0.85rem; line-height: 1.5;">
+                Our private wealth selectors are currently reviewing your strategy statement. Reviews are typically resolved in 1-2 business hours.
+            </p>
+            <p style="color: var(--text-faint); font-size: 0.75rem; margin-top: 1rem; font-style: italic;">
+                Bookmark this page to check your approval status.
+            </p>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- APPROVED STATUS                            -->
+        <!-- ========================================== -->
+        {% elif application.status == 'approved' %}
+        <div style="text-align: center; padding: 1.5rem 0;">
+            <div style="font-size: 3rem; margin-bottom: 1rem; animation: bounce 2s infinite;">🎉</div>
+            <h3 style="font-family: Georgia, serif; color: #10B981; margin-bottom: 0.8rem; font-size: 1.35rem;">Placement Approved</h3>
+            <p style="color: var(--text-dim); font-size: 0.85rem; line-height: 1.5; margin-bottom: 1.5rem;">
+                Congratulations! The Monarch Wealth panel has approved your application. You are invited to activate your account.
+            </p>
+
+            <!-- Invitation Code Card -->
+            <div style="background: rgba(200, 168, 94, 0.08); border: 1px dashed var(--gold); border-radius: 12px; padding: 1.2rem; margin-bottom: 1.5rem; position: relative;">
+                <div style="font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 0.5rem;">Your Invitation Code</div>
+                <div style="font-family: monospace; font-size: 1.4rem; font-weight: bold; color: var(--gold); letter-spacing: 2px;" id="invite-code-text">{{ application.invitation_code }}</div>
+            </div>
+
+            <!-- Countdown Timer -->
+            <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 8px; padding: 0.8rem; margin-bottom: 1.8rem; font-size: 0.8rem; color: #F87171;">
+                ⏳ Invitation Expiration: <span id="countdown" style="font-weight: bold;">Loading countdown...</span>
+            </div>
+
+            <a href="/register?code={{ application.invitation_code }}" 
+                style="display: block; width: 100%; padding: 1rem; background: #10B981; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; text-decoration: none; transition: all 0.3s; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.2);">
+                Activate Placement Account &rarr;
+            </a>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- REJECTED STATUS                            -->
+        <!-- ========================================== -->
+        {% elif application.status == 'rejected' or application.status == 'expired' %}
+        <div style="text-align: center; padding: 1.5rem 0;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">❌</div>
+            <h3 style="font-family: Georgia, serif; color: #EF4444; margin-bottom: 0.8rem; font-size: 1.35rem;">
+                {% if application.status == 'expired' %}Invitation Expired{% else %}Placement Request Declined{% endif %}
+            </h3>
+            
+            <div style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.15); border-radius: 10px; padding: 1.2rem; margin-bottom: 1.5rem; text-align: left;">
+                <div style="font-size: 0.75rem; color: var(--text-faint); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem;">Declined Reason</div>
+                <p style="color: var(--text-dim); font-size: 0.85rem; line-height: 1.5; margin: 0;">
+                    {% if application.status == 'expired' %}Your invitation code was not activated within the mandatory 7-day period.{% else %}{{ application.rejection_reason or "Profile does not meet our private criteria at this time." }}{% endif %}
+                </p>
+            </div>
+
+            <p style="color: var(--text-faint); font-size: 0.8rem; line-height: 1.4; margin-bottom: 1.5rem;">
+                Thank you for your interest. You may re-submit a placement application in the next calendar month.
+            </p>
+
+            <a href="/apply" 
+                style="display: block; width: 100%; padding: 0.9rem; background: var(--bg); border: 1px solid var(--border-gold); color: var(--gold); border-radius: 8px; font-size: 0.9rem; font-weight: 600; text-decoration: none; transition: all 0.3s;">
+                Submit New Application
+            </a>
+        </div>
+        {% endif %}
+
+        <div style="text-align: center; margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+            <a href="/" style="color: var(--text-faint); text-decoration: none; font-size: 0.75rem;">Return to Homepage</a>
+        </div>
+
+    </div>
+</div>
+
+<style>
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+@keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // Dynamic countdown timer if approved
+    {% if application.status == 'approved' and application.expires_at %}
+    const expiresAtStr = "{{ application.expires_at.strftime('%Y-%m-%dT%H:%M:%S') }}";
+    const expiresAt = new Date(expiresAtStr);
+
+    function updateCountdown() {
+        const now = new Date();
+        const diff = expiresAt - now;
+
+        if (diff <= 0) {
+            document.getElementById('countdown').textContent = "Expired";
+            window.location.reload();
+            return;
+        }
+
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+        const minutes = Math.floor((diff / (1000 * 60)) % 60);
+        const seconds = Math.floor((diff / 1000) % 60);
+
+        let timeText = "";
+        if (days > 0) timeText += `${days}d `;
+        timeText += `${hours}h ${minutes}m ${seconds}s remaining`;
+
+        document.getElementById('countdown').textContent = timeText;
+    }
+
+    updateCountdown();
+    setInterval(updateCountdown, 1000);
+    {% endif %}
+
+    // Particle background script
+    const canvas = document.getElementById('status-particles');
+    const ctx = canvas.getContext('2d');
+    let width = canvas.width = window.innerWidth;
+    let height = canvas.height = window.innerHeight;
+
+    window.addEventListener('resize', () => {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+    });
+
+    const particles = [];
+    for (let i = 0; i < 40; i++) {
+        particles.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            vx: (Math.random() - 0.5) * 0.4,
+            vy: (Math.random() - 0.5) * 0.4,
+            radius: Math.random() * 2 + 1,
+            color: Math.random() > 0.5 ? 'rgba(200, 168, 94, 0.25)' : 'rgba(255, 255, 255, 0.08)'
+        });
+    }
+
+    function animate() {
+        ctx.clearRect(0, 0, width, height);
+        particles.forEach(p => {
+            p.x += p.vx;
+            p.y += p.vy;
+
+            if (p.x < 0 || p.x > width) p.vx *= -1;
+            if (p.y < 0 || p.y > height) p.vy *= -1;
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.fill();
+        });
+        requestAnimationFrame(animate);
+    }
+    animate();
+});
+</script>
+{% endblock %}

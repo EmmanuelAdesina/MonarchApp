@@ -2196,6 +2196,25 @@ body {
   line-height: 1.4;
 }
 
+.withdrawal-form select {
+    flex: 1;
+    padding: 0.8rem;
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 600;
+    outline: none;
+    transition: border-color 0.2s;
+    cursor: pointer;
+}
+
+.withdrawal-form select:focus {
+    border-color: var(--border-gold);
+}
+
+
 .btn-gold {
   width: 100%;
   padding: 0.9rem;
@@ -2400,6 +2419,25 @@ body {
   color: var(--text-faint);
 }
 
+.status-text {
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin-top: 0.5rem;
+}
+.status-text.success {
+    color: var(--green);
+}
+.status-text.error {
+    color: #EF4444;
+}
+.status-reason {
+    font-size: 0.7rem !important;
+    color: var(--text-faint) !important;
+    margin-top: 0.2rem !important;
+    background: rgba(255,255,255,0.02);
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+}
 /* ---- Verified Payout Section (Landing Page) ---- */
 .proof-section {
   padding: 5rem 1.5rem;

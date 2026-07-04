@@ -82,12 +82,12 @@
                         <thead>
                             <tr>
                                 <th>User</th>
-                                <th>Amount</th>
-                                <th>Tax</th>
-                                <th>Net Amount</th>
+                                <th>Amount / Wallet</th>
+                                <th>Tax Paid?</th>
                                 <th>Status</th>
                                 <th>Date</th>
-                                <th>Actions</th>
+                                <th>TXID</th>
+                                <th class="actions-cell">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="withdrawalsTableBody">
@@ -426,6 +426,23 @@
                     <button type="submit" class="btn-gold">Add Account</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Mark as Paid Modal -->
+    <div id="markAsPaidModal" class="admin-modal" style="display:none;">
+        <div class="modal-content">
+            <h3 style="color: var(--green); border-bottom: 1px solid var(--border); padding-bottom: 0.8rem; margin-bottom: 1.2rem;">✅ Mark Withdrawal as Paid</h3>
+            <input type="hidden" id="markPaidWithdrawalId">
+            <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 1rem;" id="markPaidInfo"></p>
+            <div class="form-group">
+                <label for="markPaidTxid">Transaction ID (TXID) - Optional</label>
+                <input type="text" id="markPaidTxid" placeholder="e.g., 0x..." class="admin-input">
+            </div>
+            <div class="modal-actions">
+                <button type="button" onclick="closeMarkAsPaidModal()" class="btn-ghost">Cancel</button>
+                <button onclick="confirmMarkAsPaid()" class="btn-gold" style="background: var(--green); color: var(--bg);">Confirm & Mark Completed</button>
+            </div>
         </div>
     </div>
 

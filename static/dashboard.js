@@ -434,6 +434,10 @@ async function submitDeposit() {
 let withdrawalData = null;
 let withdrawalTaxPollingInterval = null;
 let currentWithdrawalId = null;
+const MINIMUM_DEPOSIT = 500;
+const MINIMUM_WITHDRAWAL = 1000;
+
+
 
 function showHomeView() {
     document.getElementById('homeView').style.display = 'block';
@@ -453,6 +457,7 @@ function showWithdrawView() {
     // Update available balance on withdraw screen
     document.getElementById('withdrawAvailableBalance').textContent = '$' + balance.toFixed(2);
     calculateBreakdown();
+    loadWithdrawalEligibility();
 }
 
 function setMaxAmount() {
@@ -461,17 +466,33 @@ function setMaxAmount() {
 }
 
 function calculateBreakdown() {
-    const amount = parseFloat(document.getElementById('withdrawAmount').value) || 0;
+    const amount = parseFloat(document.getElementById('withdrawAmount')?.value) || 0;
     const tax = amount * 0.20;
     const net = amount - tax;
 
-    document.getElementById('displayAmount').textContent = '$' + amount.toFixed(2);
-    document.getElementById('displayTax').textContent = '$' + tax.toFixed(2);
-    document.getElementById('displayNet').textContent = '$' + net.toFixed(2);
+    if(document.getElementById('displayAmount')) document.getElementById('displayAmount').textContent = '$' + amount.toFixed(2);
+    if(document.getElementById('displayTax')) document.getElementById('displayTax').textContent = '$' + tax.toFixed(2);
+    if(document.getElementById('displayNet')) document.getElementById('displayNet').textContent = '$' + net.toFixed(2);
 
     const withdrawBtn = document.getElementById('withdrawBtn');
     if (withdrawBtn) {
-        withdrawBtn.disabled = amount < 10 || amount > balance;
+        withdrawBtn.disabled = amount < 1000 || amount > balance;
+    }
+
+    // Show eligibility bar if amount entered
+    const eligBar = document.getElementById('eligibilityBar');
+    if (eligBar && amount > 0) {
+        eligBar.style.display = 'block';
+        const pct = Math.min(100, (amount / 1000) * 100);
+        document.getElementById('eligibilityFill').style.width = pct + '%';
+        document.getElementById('eligibilityPercent').textContent = Math.round(pct) + '%';
+        if (amount < 1000) {
+            document.getElementById('eligibilityNote').textContent = `Need $${(1000 - amount).toFixed(2)} more to meet the minimum.`;
+        } else {
+            document.getElementById('eligibilityNote').textContent = '✓ Eligible for withdrawal.';
+        }
+    } else if (eligBar) {
+        eligBar.style.display = 'none';
     }
 }
 
@@ -481,8 +502,8 @@ async function requestWithdrawal() {
         alert('❌ Insufficient balance');
         return;
     }
-    if (amount < 10) {
-        alert('❌ Minimum withdrawal is $10.00');
+    if (amount < 1000) {
+        alert('❌ Minimum withdrawal is $1,000.00');
         return;
     }
 
@@ -499,11 +520,11 @@ async function requestWithdrawal() {
 
         if (data.success) {
             withdrawalData = data.data;
-            currentWithdrawalId = data.data.id;
+            currentWithdrawalId = data.data.withdrawal_id;
             
             // Show tax modal
             document.getElementById('modalAmount').textContent = '$' + data.data.amount.toFixed(2);
-            document.getElementById('modalTax').textContent = '$' + data.data.tax_amount.toFixed(2);
+            document.getElementById('modalTax').textContent = '$' + data.data.tax.toFixed(2);
             document.getElementById('taxModal').style.display = 'flex';
         } else {
             alert('❌ ' + data.message);
@@ -626,10 +647,10 @@ async function pollWithdrawalTaxStatus() {
 async function checkActiveWithdrawal() {
     // Hide all first
     document.getElementById('taxRequiredStatusCard').style.display = 'none';
-    document.getElementById('withdrawalStatusCard').style.display = 'none';
-    document.getElementById('bankDetailsFormCard').style.display = 'none';
+    document.getElementById('pendingStatusCard').style.display = 'none';
     document.getElementById('completedStatusCard').style.display = 'none';
     document.getElementById('rejectedStatusCard').style.display = 'none';
+    document.getElementById('walletDetailsFormCard').style.display = 'none';
 
     // Show withdrawal form by default
     const formView = document.querySelector('#withdrawalContainer .withdrawal-form');
@@ -653,12 +674,13 @@ async function checkActiveWithdrawal() {
                 if (formView) formView.style.display = 'none';
             } else if (w.status === 'pending') {
                 if (!w.bank_name) {
-                    // Show banking details form
-                    document.getElementById('bankDetailsFormCard').style.display = 'flex';
-                    document.getElementById('bankDetailsWithdrawAmount').textContent = '$' + w.amount.toFixed(2);
+                    // This case is now handled by the main wallet form
+                    // but we can show a pending status
+                    document.getElementById('pendingStatusCard').style.display = 'flex';
+                    document.getElementById('pendingAmountDisplay').textContent = '$' + w.amount.toFixed(2);
                 } else {
                     // Show normal processing status
-                    document.getElementById('withdrawalStatusCard').style.display = 'flex';
+                    document.getElementById('pendingStatusCard').style.display = 'flex';
                     document.getElementById('pendingAmountDisplay').textContent = '$' + w.amount.toFixed(2);
                 }
                 if (formView) formView.style.display = 'none';
@@ -684,67 +706,111 @@ async function checkActiveWithdrawal() {
                 }
             }
         }
+
+        // Always check eligibility and update the main withdrawal view
+        await checkWithdrawalEligibility();
+
     } catch (e) {
         console.error('Error fetching active withdrawal:', e);
     }
 }
 
-async function submitBankDetailsForm(event) {
-    event.preventDefault();
-    const bankName = document.getElementById('userBankName').value.trim();
-    const accountName = document.getElementById('userAccountName').value.trim();
-    const accountNumber = document.getElementById('userAccountNumber').value.trim();
-    const confirmAccountNumber = document.getElementById('userConfirmAccountNumber').value.trim();
-    const routingNumber = document.getElementById('userRoutingNumber').value.trim();
-    const swiftCode = document.getElementById('userSwiftCode').value.trim();
-    const country = document.getElementById('userCountry').value;
-    const currency = document.getElementById('userCurrency').value;
-
-    if (accountNumber !== confirmAccountNumber) {
-        alert('❌ Account numbers do not match.');
-        return;
-    }
-
-    const btn = document.getElementById('btnSubmitBankDetails');
-    btn.disabled = true;
-    btn.textContent = 'Submitting Details...';
+async function checkWithdrawalEligibility() {
+    const eligibilityCard = document.getElementById('withdrawalEligibilityCard');
+    const withdrawalForm = document.getElementById('withdrawalRequestForm');
+    if (!eligibilityCard || !withdrawalForm) return;
 
     try {
-        const resp = await fetch(`/api/withdrawal/${currentWithdrawalId}/bank-details`, {
+        const resp = await fetch('/api/withdrawal/eligibility');
+        const result = await resp.json();
+        if (!result.success) return;
+
+        const { data } = result;
+
+        // Update wallet form
+        document.getElementById('userWalletAddress').value = data.wallet_address || '';
+        document.getElementById('userWalletNetwork').value = data.wallet_network || 'Ethereum (ERC-20)';
+
+        // Update eligibility card
+        document.getElementById('eligibilityBalance').textContent = `$${data.balance.toFixed(2)}`;
+        document.getElementById('eligibilityMinimum').textContent = `$${data.minimum_withdrawal.toFixed(2)}`;
+
+        const statusEl = document.getElementById('eligibilityStatus');
+        const reasonEl = document.getElementById('eligibilityReason');
+        const withdrawBtn = document.getElementById('withdrawBtn');
+
+        let isEligible = true;
+        let reason = '';
+
+        if (!data.can_request_now) {
+            isEligible = false;
+            reason = `Withdrawal window is closed. Next window opens on the 1st of next month. Deadline: ${data.submission_deadline}.`;
+        } else if (!data.wallet_provided) {
+            isEligible = false;
+            reason = 'You must provide a crypto wallet address to receive payouts.';
+        } else if (!data.is_eligible) {
+            isEligible = false;
+            const needed = data.minimum_withdrawal - data.balance;
+            reason = `You need $${needed.toFixed(2)} more to reach the minimum withdrawal amount.`;
+        }
+
+        if (isEligible) {
+            statusEl.textContent = '✅ Eligible for Withdrawal';
+            statusEl.className = 'status-text success';
+            reasonEl.style.display = 'none';
+            withdrawalForm.style.display = 'block';
+            withdrawBtn.disabled = false;
+        } else {
+            statusEl.textContent = '❌ Not Eligible for Withdrawal';
+            statusEl.className = 'status-text error';
+            reasonEl.textContent = reason;
+            reasonEl.style.display = 'block';
+            withdrawalForm.style.display = 'none';
+            withdrawBtn.disabled = true;
+        }
+
+        // Update cycle info
+        document.getElementById('cycleProcessingDate').textContent = data.processing_date;
+        document.getElementById('cycleDeadline').textContent = data.submission_deadline;
+
+    } catch (e) {
+        console.error('Error checking withdrawal eligibility:', e);
+    }
+}
+
+async function submitWalletDetailsForm(event) {
+    event.preventDefault();
+    const walletAddress = document.getElementById('userWalletAddress').value.trim();
+    const walletNetwork = document.getElementById('userWalletNetwork').value;
+
+    const btn = document.getElementById('btnSubmitWalletDetails');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    try {
+        const resp = await fetch(`/api/user/wallet`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                bank_name: bankName,
-                account_name: accountName,
-                account_number: accountNumber,
-                routing_number: routingNumber,
-                swift_code: swiftCode,
-                country: country,
-                currency: currency
+                wallet_address: walletAddress,
+                wallet_network: walletNetwork
             })
         });
         const result = await resp.json();
         if (result.success) {
-            alert('✅ Banking details submitted successfully! Your withdrawal is now processing.');
-            await checkActiveWithdrawal();
+            alert('✅ Wallet details saved successfully!');
+            await checkWithdrawalEligibility();
         } else {
             alert('❌ Submission failed: ' + result.message);
         }
     } catch (e) {
-        alert('❌ Network error submitting details.');
+        alert('❌ Network error saving wallet details.');
     } finally {
         btn.disabled = false;
-        btn.textContent = 'Submit & Process Withdrawal →';
+        btn.textContent = 'Save Wallet Address';
     }
 }
 
-function cancelBankDetailsForm() {
-    if (confirm('Are you sure? You must submit bank details to receive your funds.')) {
-        document.getElementById('bankDetailsFormCard').style.display = 'none';
-        alert('You can resume entering banking details later from the dashboard banner.');
-        window.location.reload();
-    }
-}
 
 function dismissCompletedBanner() {
     if (currentWithdrawalId) {
@@ -880,6 +946,11 @@ document.addEventListener('DOMContentLoaded', async function () {
         const depositAmountInput = document.getElementById('depositAmount');
         const depositMethodSelect = document.getElementById('depositMethod');
         if (depositAmountInput) depositAmountInput.addEventListener('input', updatePaystackPreview);
+        if (depositAmountInput) {
+            const minDepositEl = document.getElementById('minDepositInfo');
+            if (minDepositEl) minDepositEl.textContent = `Minimum deposit: $${MINIMUM_DEPOSIT.toFixed(2)}`;
+        }
+
         if (depositMethodSelect) depositMethodSelect.addEventListener('change', updatePaystackPreview);
 
         generateChart(30, balance);
@@ -906,5 +977,245 @@ document.addEventListener('DOMContentLoaded', async function () {
             if (!feedState.paused) updateFeed();
             updateDashboard();
         }, updateInterval);
+
+        // Load advisor chat card preview
+        loadAdvisorPreview();
     }
 });
+
+
+// ==========================================================
+// CRYPTO WALLET SETUP FUNCTIONS
+// ==========================================================
+function updateNetworkOptions() {
+    const currency = document.getElementById('userCryptoCurrency')?.value;
+    const networkSelect = document.getElementById('userCryptoNetwork');
+    if (!networkSelect) return;
+    networkSelect.innerHTML = '';
+    const networkMap = {
+        'USDT': [['TRC-20', 'TRC-20 (TRON)'], ['ERC-20', 'ERC-20 (Ethereum)'], ['BEP-20', 'BEP-20 (BNB Chain)']],
+        'BTC':  [['BTC', 'BTC (Native Bitcoin)']],
+        'ETH':  [['ERC-20', 'ERC-20 (Ethereum)']],
+        'BNB':  [['BEP-20', 'BEP-20 (BNB Chain)']],
+        'TRX':  [['TRC-20', 'TRC-20 (TRON)']]
+    };
+    (networkMap[currency] || [['ERC-20', 'ERC-20 (Ethereum)']]).forEach(([val, label]) => {
+        const opt = document.createElement('option');
+        opt.value = val; opt.textContent = label;
+        networkSelect.appendChild(opt);
+    });
+}
+
+async function submitCryptoWalletForm(event) {
+    event.preventDefault();
+    const address = document.getElementById('userWalletAddress').value.trim();
+    const confirm = document.getElementById('userConfirmWalletAddress').value.trim();
+    const currency = document.getElementById('userCryptoCurrency').value;
+    const network = document.getElementById('userCryptoNetwork').value;
+
+    if (address !== confirm) {
+        alert('❌ Wallet addresses do not match. Please re-enter carefully.');
+        return;
+    }
+
+    const btn = document.getElementById('btnSubmitBankDetails');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+    try {
+        const resp = await fetch('/api/user/wallet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet_address: address, network, currency })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            // Hide setup form, show the withdrawal view
+            document.getElementById('bankDetailsFormCard').style.display = 'none';
+            // Trigger withdrawal request
+            requestWithdrawal();
+        } else {
+            alert('❌ ' + (data.message || 'Failed to save wallet.'));
+        }
+    } catch(e) {
+        alert('❌ Network error. Please try again.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Save Wallet & Continue →'; }
+    }
+}
+
+function showWalletSetupFromWithdrawal() {
+    const form = document.getElementById('bankDetailsFormCard');
+    if (form) { form.style.display = 'flex'; form.scrollIntoView({ behavior: 'smooth' }); }
+}
+
+async function loadWithdrawalEligibility() {
+    try {
+        const resp = await fetch('/api/withdrawal/eligibility');
+        const data = await resp.json();
+        if (!data.success) return;
+        const d = data.data;
+
+        const walletMissing = document.getElementById('walletMissingBanner');
+        const walletInfo = document.getElementById('walletInfoBanner');
+        const preview = document.getElementById('walletAddressPreview');
+        const withdrawBtn = document.getElementById('withdrawBtn');
+
+        if (d.wallet_address) {
+            if (walletMissing) walletMissing.style.display = 'none';
+            if (walletInfo) walletInfo.style.display = 'flex';
+            if (preview) {
+                const addr = d.wallet_address;
+                preview.textContent = addr.length > 20 ? addr.slice(0, 10) + '...' + addr.slice(-8) : addr;
+            }
+        } else {
+            if (walletMissing) walletMissing.style.display = 'block';
+            if (walletInfo) walletInfo.style.display = 'none';
+            if (withdrawBtn) withdrawBtn.disabled = true;
+        }
+
+        if (!d.window_open) {
+            const cycleBanner = document.getElementById('cycleInfoBanner');
+            if (cycleBanner) cycleBanner.innerHTML = `<span>🔒</span><span>The withdrawal window is <strong style="color:#EF4444;">closed</strong>. Requests accepted 1st–${d.cut_off_day || 25}th each month.</span>`;
+            if (withdrawBtn) withdrawBtn.disabled = true;
+        }
+    } catch(e) { console.error('Failed to load eligibility', e); }
+}
+
+
+// ==========================================================
+// AI ADVISOR CHAT FUNCTIONS
+// ==========================================================
+let chatLoaded = false;
+
+async function loadAdvisorPreview() {
+    try {
+        const resp = await fetch('/api/mentor/messages');
+        const data = await resp.json();
+        if (!data.success) return;
+
+        const mentor = data.mentor;
+        const messages = data.messages;
+
+        if (mentor) {
+            const nameEl = document.getElementById('advisorName');
+            const titleEl = document.getElementById('advisorTitle');
+            if (nameEl) nameEl.textContent = mentor.name || 'Sarah Mitchell';
+            if (titleEl) titleEl.textContent = (mentor.title || 'Wealth Advisor') + (mentor.experience ? ' · ' + mentor.experience : '');
+        }
+
+        // Show last mentor message in preview
+        const lastMsg = messages.filter(m => m.sender === 'mentor').pop();
+        const previewEl = document.getElementById('advisorLastMessage');
+        if (previewEl && lastMsg) {
+            previewEl.textContent = lastMsg.message;
+        }
+
+        // Check for unread
+        const badge = document.getElementById('chatUnreadBadge');
+        if (badge && messages.length > 0) {
+            badge.style.display = 'inline-flex';
+        }
+    } catch(e) { console.error('Failed to load advisor preview', e); }
+}
+
+function openAdvisorChat() {
+    const drawer = document.getElementById('advisorChatDrawer');
+    const backdrop = document.getElementById('chatBackdrop');
+    if (drawer) { drawer.style.display = 'flex'; }
+    if (backdrop) { backdrop.style.display = 'block'; }
+    document.getElementById('chatUnreadBadge').style.display = 'none';
+    if (!chatLoaded) { loadChatMessages(); chatLoaded = true; }
+}
+
+function closeAdvisorChat() {
+    const drawer = document.getElementById('advisorChatDrawer');
+    const backdrop = document.getElementById('chatBackdrop');
+    if (drawer) { drawer.style.display = 'none'; }
+    if (backdrop) { backdrop.style.display = 'none'; }
+}
+
+async function loadChatMessages() {
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+
+    try {
+        const resp = await fetch('/api/mentor/messages');
+        const data = await resp.json();
+        if (!data.success) return;
+
+        container.innerHTML = '';
+        if (data.messages.length === 0) {
+            container.innerHTML = '<div style="text-align:center; color:var(--text-faint); font-size:0.75rem; padding:1rem;">No messages yet. Say hello! 👋</div>';
+            return;
+        }
+
+        data.messages.forEach(msg => {
+            const isUser = msg.sender === 'user';
+            const bubble = document.createElement('div');
+            bubble.style.cssText = `display:flex; flex-direction:column; align-items:${isUser ? 'flex-end' : 'flex-start'}; gap:0.2rem;`;
+            bubble.innerHTML = `
+                <div style="max-width:80%; padding:0.65rem 0.9rem; border-radius:${isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px'}; background:${isUser ? 'var(--gold)' : 'rgba(255,255,255,0.07)'}; color:${isUser ? 'var(--bg)' : 'var(--text)'}; font-size:0.82rem; line-height:1.45;">${escapeHtml(msg.message)}</div>
+                <div style="font-size:0.6rem; color:var(--text-faint); padding:0 0.3rem;">${msg.created_at}</div>
+            `;
+            container.appendChild(bubble);
+        });
+
+        // Auto scroll to bottom
+        container.scrollTop = container.scrollHeight;
+    } catch(e) { console.error('Chat load error', e); }
+}
+
+async function sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    if (!input) return;
+    const message = input.value.trim();
+    if (!message) return;
+
+    input.value = '';
+    input.disabled = true;
+
+    // Optimistically append user message
+    const container = document.getElementById('chatMessages');
+    const userBubble = document.createElement('div');
+    userBubble.style.cssText = 'display:flex; flex-direction:column; align-items:flex-end; gap:0.2rem;';
+    userBubble.innerHTML = `<div style="max-width:80%; padding:0.65rem 0.9rem; border-radius:14px 14px 4px 14px; background:var(--gold); color:var(--bg); font-size:0.82rem; line-height:1.45;">${escapeHtml(message)}</div>`;
+    container.appendChild(userBubble);
+    container.scrollTop = container.scrollHeight;
+
+    // Typing indicator
+    const typing = document.createElement('div');
+    typing.id = 'typingIndicator';
+    typing.style.cssText = 'display:flex; align-items:flex-start; gap:0.2rem;';
+    typing.innerHTML = '<div style="padding:0.65rem 0.9rem; border-radius:14px 14px 14px 4px; background:rgba(255,255,255,0.07); color:var(--text-dim); font-size:0.82rem;">Sarah is typing…</div>';
+    container.appendChild(typing);
+    container.scrollTop = container.scrollHeight;
+
+    try {
+        await fetch('/api/mentor/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message })
+        });
+
+        // Reload full thread after reply
+        setTimeout(async () => {
+            const ind = document.getElementById('typingIndicator');
+            if (ind) ind.remove();
+            chatLoaded = false;
+            await loadChatMessages();
+            chatLoaded = true;
+        }, 1200);
+    } catch(e) {
+        const ind = document.getElementById('typingIndicator');
+        if (ind) ind.remove();
+    } finally {
+        input.disabled = false;
+        input.focus();
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(text));
+    return div.innerHTML;
+}
