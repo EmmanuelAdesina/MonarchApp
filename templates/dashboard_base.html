@@ -24,17 +24,17 @@
         <nav class="sidebar-nav">
             {# — Main — #}
             <div class="nav-section-label">Main</div>
-            <a href="{{ url_for('dashboard.dashboard') }}"
+            <a href="{{ url_for('dashboard') }}"
                class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
                 <span class="nav-item-icon">📊</span>
                 <span class="nav-item-label">Dashboard</span>
             </a>
-            <a href="{{ url_for('dashboard.deposit') }}"
+            <a href="{{ url_for('dashboard_deposit') }}"
                class="nav-item {% if active_page == 'deposit' %}active{% endif %}">
                 <span class="nav-item-icon">💳</span>
                 <span class="nav-item-label">Deposit</span>
             </a>
-            <a href="{{ url_for('dashboard.withdraw') }}"
+            <a href="{{ url_for('dashboard_withdraw') }}"
                class="nav-item {% if active_page == 'withdraw' %}active{% endif %}">
                 <span class="nav-item-icon">💸</span>
                 <span class="nav-item-label">Withdraw</span>
@@ -42,7 +42,7 @@
 
             {# — History — #}
             <div class="nav-section-label">History</div>
-            <a href="{{ url_for('dashboard.transactions') }}"
+            <a href="{{ url_for('dashboard_transactions') }}"
                class="nav-item {% if active_page == 'transactions' %}active{% endif %}">
                 <span class="nav-item-icon">📋</span>
                 <span class="nav-item-label">Transactions</span>
@@ -50,20 +50,29 @@
 
             {# — Settings — #}
             <div class="nav-section-label">Settings</div>
-            <a href="{{ url_for('dashboard.settings') }}"
+            <a href="{{ url_for('dashboard_settings') }}"
                class="nav-item {% if active_page == 'settings' %}active{% endif %}">
                 <span class="nav-item-icon">⚙️</span>
                 <span class="nav-item-label">Settings</span>
             </a>
-            <a href="{{ url_for('dashboard.profile') }}"
+            <a href="{{ url_for('dashboard_profile') }}"
                class="nav-item {% if active_page == 'profile' %}active{% endif %}">
                 <span class="nav-item-icon">👤</span>
                 <span class="nav-item-label">Profile</span>
             </a>
 
+            {% if user.is_admin %}
+            {# — Admin — #}
+            <div class="nav-section-label">Admin</div>
+            <a href="{{ url_for('admin_dashboard') }}"
+               class="nav-item {% if active_page == 'admin' %}active{% endif %}">
+                <span class="nav-item-icon">⚡</span>
+                <span class="nav-item-label">Admin Panel</span>
+            </a>
+            {% endif %}
             {# — Support — #}
             <div class="nav-section-label">Support</div>
-            <a href="{{ url_for('dashboard.notifications') }}"
+            <a href="{{ url_for('dashboard_notifications') }}"
                class="nav-item {% if active_page == 'notifications' %}active{% endif %}">
                 <span class="nav-item-icon">🔔</span>
                 <span class="nav-item-label">Notifications</span>
@@ -71,7 +80,7 @@
                 <span class="nav-item-badge">{{ unread_notifications_count }}</span>
                 {% endif %}
             </a>
-            <a href="{{ url_for('dashboard.support') }}"
+            <a href="{{ url_for('dashboard_support') }}"
                class="nav-item {% if active_page == 'support' %}active{% endif %}">
                 <span class="nav-item-icon">❓</span>
                 <span class="nav-item-label">Support</span>
@@ -87,7 +96,7 @@
                     <div class="sidebar-user-status">Online</div>
                 </div>
             </div>
-            <a href="{{ url_for('auth.logout') }}" class="sidebar-logout">
+            <a href="{{ url_for('logout') }}" class="sidebar-logout">
                 <span>🚪</span> Sign Out
             </a>
         </div>
@@ -107,13 +116,13 @@
                 </div>
             </div>
             <div class="topbar-right">
-                <a href="{{ url_for('dashboard.notifications') }}" class="topbar-btn" aria-label="Notifications">
+                <a href="{{ url_for('dashboard_notifications') }}" class="topbar-btn" aria-label="Notifications">
                     🔔
                     {% if unread_notifications_count and unread_notifications_count > 0 %}
                     <span class="badge-dot"></span>
                     {% endif %}
                 </a>
-                <a href="{{ url_for('dashboard.deposit') }}" class="topbar-balance">
+                <a href="{{ url_for('dashboard_deposit') }}" class="topbar-balance">
                     <span>${{ "%.2f"|format(user.balance) }}</span>
                 </a>
             </div>

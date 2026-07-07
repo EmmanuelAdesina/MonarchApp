@@ -227,18 +227,19 @@
                 return resp.json();
             })
             .then(function(data) {
-                if (data.wallet_address) {
+                var wallet = data.data || data; // handle nested response
+                if (wallet.wallet_address) {
                     // Pre-populate form
-                    if (data.currency) {
-                        currencySelect.value = data.currency;
+                    if (wallet.wallet_currency) {
+                        currencySelect.value = wallet.wallet_currency;
                         updateNetworkOptions();
-                        if (data.network) {
-                            networkSelect.value = data.network;
+                        if (wallet.wallet_network) {
+                            networkSelect.value = wallet.wallet_network;
                         }
                     }
-                    if (data.wallet_address) {
-                        addressInput.value = data.wallet_address;
-                        confirmInput.value = data.wallet_address;
+                    if (wallet.wallet_address) {
+                        addressInput.value = wallet.wallet_address;
+                        confirmInput.value = wallet.wallet_address;
                     }
                     showAlert('success', 'Wallet loaded successfully');
                 }
@@ -347,8 +348,8 @@
                 'X-CSRFToken': '{{ csrf_token() if csrf_token is defined else "" }}'
             },
             body: JSON.stringify({
-                currency: currency,
-                network: network,
+                wallet_currency: currency,
+                wallet_network: network,
                 wallet_address: address
             })
         })

@@ -431,6 +431,16 @@ def waiting_list_apply_view():
     """Render waitlist application page."""
     return render_template('apply.html')
 
+@app.route('/ref/<code>')
+def referral_redirect(code):
+    """Redirect referral links to the apply page with the referral code pre-filled."""
+    # Try to find the user with this referral code
+    referrer = User.query.filter_by(referral_code=code.upper()).first()
+    if not referrer:
+        # Still redirect to apply page, they can enter it manually
+        return redirect(url_for('waiting_list_apply_view', ref=code))
+    return redirect(url_for('waiting_list_apply_view', ref=code.upper()))
+
 
 @app.route('/application/status/<int:app_id>')
 def waiting_list_status_view(app_id):

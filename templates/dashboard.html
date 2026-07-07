@@ -1,6 +1,5 @@
-{# templates/dashboard.html — Premium Fintech Dashboard #}
 {% extends "dashboard_base.html" %}
-
+{% set active_page = "dashboard" %}
 {% block title %}Dashboard – Monarch Wealth Group{% endblock %}
 
 {% block dashboard_content %}
@@ -44,16 +43,16 @@
     </div>
     <div class="card-body">
         <div class="grid-2" style="margin-top:0.5rem;">
-            <a href="{{ url_for('dashboard.deposit') }}" class="btn btn-primary btn-lg btn-block" style="padding:1.2rem;justify-content:center;gap:10px;">
+            <a href="{{ url_for('dashboard_deposit') }}" class="btn btn-primary btn-lg btn-block" style="padding:1.2rem;justify-content:center;gap:10px;">
                 <span style="font-size:1.4rem;">$</span> Deposit
             </a>
-            <a href="{{ url_for('dashboard.withdraw') }}" class="btn btn-secondary btn-lg btn-block" style="padding:1.2rem;justify-content:center;gap:10px;">
+            <a href="{{ url_for('dashboard_withdraw') }}" class="btn btn-secondary btn-lg btn-block" style="padding:1.2rem;justify-content:center;gap:10px;">
                 <span style="font-size:1.4rem;">↗</span> Withdraw
             </a>
-            <a href="{{ url_for('dashboard.new_application') if 'new_application' in url_for.__globals__ else '#' }}" class="btn btn-secondary btn-lg btn-block" style="padding:1.2rem;justify-content:center;gap:10px;">
-                <span style="font-size:1.4rem;">📋</span> New Application
+            <a href="{{ url_for('dashboard_transactions') }}" class="btn btn-secondary btn-lg btn-block" style="padding:1.2rem;justify-content:center;gap:10px;">
+                <span style="font-size:1.4rem;">📋</span> Transactions
             </a>
-            <a href="{{ url_for('dashboard.support') }}" class="btn btn-ghost btn-lg btn-block" style="padding:1.2rem;justify-content:center;gap:10px;border:1px solid var(--border-primary);">
+            <a href="{{ url_for('dashboard_support') }}" class="btn btn-ghost btn-lg btn-block" style="padding:1.2rem;justify-content:center;gap:10px;border:1px solid var(--border-primary);">
                 <span style="font-size:1.4rem;">🛟</span> Support
             </a>
         </div>
@@ -325,5 +324,6 @@
 
 {% block scripts %}
 {{ super() }}
+<script src="{{ url_for('static', filename='fomo.js') }}"></script>
 <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
 {% endblock %}

@@ -1,0 +1,74 @@
+{% extends "dashboard_base.html" %}
+
+{% set active_page = "notifications" %}
+
+{% block title %}Notifications – Monarch Wealth Group{% endblock %}
+
+{% block dashboard_content %}
+<div class="page-header">
+    <h1 class="page-title">Notifications</h1>
+    <p class="page-subtitle">Recent account activity and updates</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">🔔 Activity Feed</h2>
+        <button id="refreshNotifications" class="btn btn-sm btn-secondary">↻ Refresh</button>
+    </div>
+    <div class="card-body" id="notificationsList">
+        <div class="empty-state">
+            <div class="empty-state-icon">⏳</div>
+            <div class="empty-state-title">Loading notifications…</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function() {
+    'use strict';
+
+    const container = document.getElementById('notificationsList');
+
+    function loadNotifications() {
+        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⏳</div><div class="empty-state-title">Loading notifications…</div></div>';
+
+        fetch('/api/notifications')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success && data.notifications && data.notifications.length > 0) {
+                    container.innerHTML = data.notifications.map(n => {
+                        const iconMap = {
+                            'deposit': '💰',
+                            'withdrawal': '💸',
+                            'growth': '📈',
+                            'tax_payment': '⚖️',
+                            'referral_bonus': '🎁'
+                        };
+                        return `
+                            <div class="feed-card" style="animation-delay:0ms;">
+                                <div class="feed-icon gold">${iconMap[n.type] || '📌'}</div>
+                                <div class="feed-copy">
+                                    <div class="feed-line"><strong>${n.title || n.type}</strong></div>
+                                    <div class="feed-time">${n.description}</div>
+                                    <div class="feed-time">${n.time}</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-title">No notifications yet</div><div class="empty-state-text">Your account activity will appear here.</div></div>';
+                }
+            })
+            .catch(() => {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-title">Failed to load</div><div class="empty-state-text">Please try again later.</div></div>';
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', loadNotifications);
+    document.getElementById('refreshNotifications')?.addEventListener('click', loadNotifications);
+})();
+</script>
+{% endblock %}
