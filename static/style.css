@@ -1786,7 +1786,25 @@ tr:hover td {
 
   .nav-links.open { display: flex; }
 
-  .btn-ghost-nav { display: none; }
+  /* On mobile, show auth buttons inside the hamburger dropdown */
+  .nav-links.open .mobile-nav-login { display: flex !important; }
+
+  /* Keep "Log In" and "Request Access" visible in mobile dropdown */
+  .btn-ghost-nav {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    padding: 0.5rem 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .btn-nav-primary {
+    display: block;
+    text-align: center;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.8rem;
+    width: 100%;
+  }
   .hamburger { display: flex; }
 
   .hero { min-height: 90vh; padding: calc(72px + 1rem) 1rem 2rem; }

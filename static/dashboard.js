@@ -163,7 +163,7 @@ async function updateFeed() {
                     <div class="feed-icon ${tone}">${icon}</div>
                     <div class="feed-copy">
                         <div class="feed-line">${item.name ? `<strong>${item.name}</strong> ` : ''}${item.text}</div>
-                        <div class="feed-time">${item.time} ago</div>
+                        <div class="feed-time">${item.time}</div>
                     </div>
                 </div>
             `;

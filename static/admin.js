@@ -102,6 +102,9 @@ async function loadWithdrawals() {
                         <button onclick="openDetailModal('${w.id}')" class="btn-sm btn-view">📋 View</button>
                         <button onclick="openReceiptModal('${w.id}', ${w.amount || 0}, ${w.tax_amount || 0})" class="btn-sm btn-approve">Approve</button>
                         <button onclick="openRejectModal('${w.id}')" class="btn-sm btn-reject">Reject</button>
+                    ` : `
+                        <button onclick="openDetailModal('${w.id}')" class="btn-sm btn-view">📋 View</button>
+                        <button onclick="openRejectModal('${w.id}')" class="btn-sm btn-reject">Reject</button>
                     `;
                 } else if (w.status === 'completed' && w.receipt_number) {
                     actionsHtml = `
