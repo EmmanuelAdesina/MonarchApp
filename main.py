@@ -25,7 +25,7 @@ dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path, override=True)
 
-app = Flask(__name__)
+app = Flask(__name__, instance_path=os.path.join(tempfile.gettempdir(), 'instance'))
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 
 # --- New Financial Policies ---
