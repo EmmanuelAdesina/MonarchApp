@@ -1974,6 +1974,29 @@ def waiting_list_status(app_id):
 
 
 # ==================================================================
+# ADMIN MEMBERS ACTIONS
+# ==================================================================
+@app.route('/api/admin/users')
+@login_required
+@admin_required
+def admin_users():
+    """List all registered users for admin panel."""
+    users = User.query.order_by(User.created_at.desc()).all()
+    result = []
+    for u in users:
+        result.append({
+            'id': u.id,
+            'username': u.username,
+            'email': u.email,
+            'balance': round(u.balance, 2),
+            'total_deposits': round(u.total_deposits, 2),
+            'is_admin': u.is_admin,
+            'created_at': u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else ''
+        })
+    return jsonify({'success': True, 'users': result})
+
+
+# ==================================================================
 # ADMIN WAITING LIST ACTIONS
 # ==================================================================
 @app.route('/api/admin/waiting-list/applications')

@@ -799,3 +799,18 @@ textarea.admin-input {
         border-radius: 16px 16px 0 0;
     }
 }
+
+/* Admin badge for tabs showing pending count */
+.admin-badge {
+    background: #EF4444;
+    color: #FFF;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.1rem 0.4rem;
+    border-radius: 10px;
+    margin-left: 0.35rem;
+    display: inline-block;
+    vertical-align: middle;
+    line-height: 1.2;
+}
+

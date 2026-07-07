@@ -1802,5 +1802,576 @@ tr:hover td {
 .dashboard-page {
   width: 100%;
 }
-</style>
-</write_to_file>
+
+/* ==================================================================
+   LANDING PAGE — MISSING SECTION STYLES
+   ================================================================== */
+
+/* ── Featured In ── */
+.featured-section {
+  padding: 2.5rem 1.5rem;
+  background: rgba(10, 13, 26, 0.6);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.featured-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.featured-eyebrow {
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  color: var(--text-tertiary);
+  margin-bottom: 1.2rem;
+  display: block;
+  font-family: var(--font-serif);
+}
+
+.featured-logos {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2.5rem;
+  flex-wrap: wrap;
+}
+
+.featured-logo-item {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  letter-spacing: 1px;
+  opacity: 0.4;
+  transition: all 0.3s ease;
+  cursor: default;
+}
+
+.featured-logo-item:hover {
+  opacity: 0.75;
+  color: var(--text-secondary);
+}
+
+/* ── Portfolio Section ── */
+.portfolio-section {
+  padding: 6rem 1.5rem;
+  background: var(--bg-primary);
+}
+
+.portfolio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.2rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.portfolio-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  text-align: center;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.portfolio-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(200,168,94,0.04), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.portfolio-card:hover {
+  border-color: var(--border-gold);
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-gold);
+}
+
+.portfolio-card:hover::before {
+  opacity: 1;
+}
+
+.card-icon {
+  font-size: 2rem;
+  margin-bottom: 0.75rem;
+  display: block;
+}
+
+.card-company {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.card-return {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.card-return.positive {
+  color: var(--green);
+}
+
+.card-badge {
+  display: inline-block;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  background: var(--gold-dim);
+  color: var(--gold);
+  border: 1px solid var(--border-gold);
+}
+
+.card-badge.private {
+  background: rgba(96, 165, 250, 0.1);
+  color: var(--blue);
+  border-color: rgba(96, 165, 250, 0.2);
+}
+
+.portfolio-disclaimer {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  margin-top: 2rem;
+  opacity: 0.7;
+}
+
+/* ── Banking Section ── */
+.banking-section {
+  padding: 6rem 1.5rem;
+  background: var(--bg-secondary);
+}
+
+.banking-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.banking-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1.5rem;
+  font-family: var(--font-serif);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  letter-spacing: 1px;
+  opacity: 0.55;
+  transition: all 0.3s ease;
+  cursor: default;
+}
+
+.banking-card:hover {
+  opacity: 1;
+  color: var(--gold);
+  border-color: var(--border-gold);
+  background: var(--gold-dim);
+}
+
+.banking-tagline {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-top: 2rem;
+  opacity: 0.6;
+}
+
+/* ── How It Works ── */
+.how-section {
+  padding: 6rem 1.5rem;
+  background: var(--bg-primary);
+}
+
+.how-grid {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  max-width: 900px;
+  margin: 0 auto;
+  flex-wrap: wrap;
+}
+
+.how-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: 2rem 1.5rem;
+  text-align: center;
+  flex: 1;
+  min-width: 200px;
+  max-width: 260px;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.how-card:hover {
+  border-color: var(--border-gold);
+  box-shadow: var(--shadow-gold);
+  transform: translateY(-4px);
+}
+
+.how-number {
+  font-family: var(--font-serif);
+  font-size: 0.6rem;
+  letter-spacing: 3px;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-bottom: 1rem;
+  opacity: 0.7;
+}
+
+.how-icon {
+  margin: 0 auto 1.2rem;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--gold-dim);
+  border: 1px solid var(--border-gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.how-card h3 {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.how-card p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.how-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 48px;
+  padding-top: 2rem;
+  opacity: 0.4;
+}
+
+/* ── Testimonials ── */
+.testimonials-section {
+  padding: 6rem 1.5rem;
+  background: var(--bg-secondary);
+}
+
+.testimonials-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.testimonial-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.testimonial-card:hover {
+  border-color: var(--border-gold);
+  box-shadow: var(--shadow-gold);
+  transform: translateY(-3px);
+}
+
+.testimonial-stars {
+  font-size: 0.85rem;
+  color: var(--gold);
+  letter-spacing: 2px;
+}
+
+.testimonial-quote {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-style: italic;
+  color: var(--text-primary);
+  line-height: 1.7;
+  flex: 1;
+}
+
+.testimonial-author {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.testimonial-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+  color: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  border: 2px solid var(--border-gold);
+}
+
+.testimonial-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.testimonial-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.testimonial-location {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+}
+
+/* ── CTA Section ── */
+.cta-section {
+  padding: 7rem 1.5rem;
+  background: var(--bg-primary);
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+
+.cta-bg-pattern {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 50%, rgba(200,168,94,0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 100% 60% at 20% 80%, rgba(200,168,94,0.03) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.cta-content {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.cta-title {
+  font-family: var(--font-serif);
+  font-size: clamp(1.8rem, 3.5vw, 2.8rem);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+  margin-bottom: 1rem;
+}
+
+.cta-sub {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+}
+
+.cta-sub strong {
+  color: var(--gold);
+}
+
+.cta-btn {
+  display: inline-flex;
+}
+
+.cta-disclaimer {
+  margin-top: 1.5rem;
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+/* ── Landing Footer ── */
+.landing-footer {
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-primary);
+  padding: 3rem 1.5rem 2rem;
+}
+
+.footer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  max-width: 960px;
+  margin: 0 auto 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.footer-address {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+}
+
+.footer-legal {
+  max-width: 960px;
+  margin: 0 auto 1.5rem;
+}
+
+.footer-legal p {
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  line-height: 1.7;
+  margin-bottom: 0.4rem;
+}
+
+.footer-legal a {
+  color: var(--gold);
+  text-decoration: none;
+  opacity: 0.7;
+}
+
+.footer-legal a:hover {
+  opacity: 1;
+}
+
+.footer-links {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  max-width: 960px;
+  margin: 0 auto 1.5rem;
+}
+
+.footer-links a {
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: color 0.2s;
+}
+
+.footer-links a:hover {
+  color: var(--gold);
+}
+
+.footer-copy {
+  text-align: center;
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  opacity: 0.5;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+/* ── Hero Cityscape (decorative bg element) ── */
+.hero-cityscape {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  background: linear-gradient(
+    to top,
+    rgba(10,13,26,0.6) 0%,
+    transparent 100%
+  );
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* ── Landing Page Mobile Additions ── */
+@media (max-width: 767px) {
+  .portfolio-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.8rem;
+  }
+
+  .how-grid {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .how-arrow {
+    transform: rotate(90deg);
+    padding-top: 0;
+    width: 100%;
+  }
+
+  .how-card {
+    max-width: 100%;
+    min-width: unset;
+    width: 100%;
+  }
+
+  .banking-grid {
+    gap: 0.6rem;
+  }
+
+  .banking-card {
+    padding: 0.6rem 1rem;
+    font-size: 0.75rem;
+  }
+
+  .testimonials-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .footer-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .footer-links {
+    gap: 1rem;
+  }
+
+  .featured-logos {
+    gap: 1.2rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .portfolio-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+  }
+
+  .portfolio-card {
+    padding: 1rem;
+  }
+
+  .card-icon { font-size: 1.5rem; }
+  .card-company { font-size: 0.9rem; }
+}

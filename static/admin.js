@@ -25,6 +25,13 @@ function switchAdminTab(tabName) {
         case 'withdrawals':
             loadStats();
             loadWithdrawals();
+            loadCycleInfo();
+            break;
+        case 'waiting-list':
+            loadWaitingList('');
+            break;
+        case 'members':
+            loadMembers();
             break;
         case 'receipt-library':
             loadReceiptLibrary();
@@ -816,3 +823,375 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load initial tab
     switchAdminTab('withdrawals');
 });
+
+// ============================================================
+// CYCLE INFO BAR
+// ============================================================
+
+async function loadCycleInfo() {
+    const bar = document.getElementById('cycleInfoBar');
+    if (!bar) return;
+    try {
+        const resp = await fetch('/api/withdrawal/settings');
+        const data = await resp.json();
+        if (data.success) {
+            const d = data.data;
+            bar.innerHTML = `
+                <span>📅 <strong>Cycle:</strong> ${d.current_cycle}</span>
+                <span>✂️ <strong>Submission Deadline:</strong> ${d.cut_off_day}th of every month</span>
+                <span>📤 <strong>Processing Date:</strong> ${d.processing_day}</span>
+                <span>💵 <strong>Min Withdrawal:</strong> $${Number(d.min_withdrawal).toLocaleString()}</span>
+                <span>🧾 <strong>Tax Rate:</strong> ${d.tax_rate}%</span>
+                <span style="color:${d.can_request ? 'var(--green)' : '#EF4444'};font-weight:600;">${d.can_request ? '🟢 Window Open' : '🔴 Window Closed'}</span>
+            `;
+        }
+    } catch (e) {
+        if (bar) bar.innerHTML = 'Could not load cycle info.';
+    }
+}
+
+// ============================================================
+// WAITING LIST MANAGEMENT
+// ============================================================
+
+let _allWaitingListData = [];
+let _currentWLFilter = '';
+
+async function loadWaitingList(statusFilter) {
+    _currentWLFilter = statusFilter;
+
+    // Update filter tab UI
+    ['wlTabAll','wlTabPending','wlTabApproved','wlTabRejected'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('active');
+    });
+    const tabMap = { '': 'wlTabAll', 'pending': 'wlTabPending', 'approved': 'wlTabApproved', 'rejected': 'wlTabRejected' };
+    const activeTab = document.getElementById(tabMap[statusFilter]);
+    if (activeTab) activeTab.classList.add('active');
+
+    const tbody = document.getElementById('waitingListBody');
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="8" class="loading">Loading applications…</td></tr>`;
+
+    try {
+        const resp = await fetch('/api/admin/waiting-list/applications');
+        const data = await resp.json();
+
+        if (!data.success) throw new Error(data.message || 'Failed to load');
+
+        _allWaitingListData = data.applications || [];
+
+        // Dynamically compute stats from the full list
+        const stats = {
+            total: _allWaitingListData.length,
+            pending: _allWaitingListData.filter(a => a.status === 'pending').length,
+            approved: _allWaitingListData.filter(a => a.status === 'approved').length,
+            rejected: _allWaitingListData.filter(a => a.status === 'rejected').length
+        };
+        updateWLStats(stats);
+
+        // Filter the applications before rendering if status filter is active
+        const filteredApps = statusFilter 
+            ? _allWaitingListData.filter(a => a.status === statusFilter)
+            : _allWaitingListData;
+
+        renderWaitingListTable(filteredApps);
+
+        // Badge on tab button
+        const badge = document.getElementById('waitingListBadge');
+        if (badge) {
+            if (stats.pending > 0) {
+                badge.textContent = stats.pending;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#EF4444;padding:1.5rem;">
+            Error loading applications: ${e.message}</td></tr>`;
+        console.error('Waiting list error:', e);
+    }
+}
+
+function updateWLStats(stats) {
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set('wlStatTotal', stats.total || 0);
+    set('wlStatPending', stats.pending || 0);
+    set('wlStatApproved', stats.approved || 0);
+    set('wlStatRejected', stats.rejected || 0);
+}
+
+function renderWaitingListTable(applications) {
+    const tbody = document.getElementById('waitingListBody');
+    if (!tbody) return;
+
+    if (!applications.length) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-faint);">No applications found.</td></tr>`;
+        return;
+    }
+
+    const statusBadge = (s) => {
+        const map = {
+            pending:  `<span style="color:#F59E0B;font-size:0.7rem;font-weight:600;background:rgba(245,158,11,0.1);padding:0.15rem 0.5rem;border-radius:20px;">Pending</span>`,
+            approved: `<span style="color:var(--green);font-size:0.7rem;font-weight:600;background:rgba(74,222,128,0.1);padding:0.15rem 0.5rem;border-radius:20px;">Approved</span>`,
+            rejected: `<span style="color:#EF4444;font-size:0.7rem;font-weight:600;background:rgba(239,68,68,0.1);padding:0.15rem 0.5rem;border-radius:20px;">Rejected</span>`,
+        };
+        return map[s] || s;
+    };
+
+    tbody.innerHTML = applications.map(app => {
+        const pendingActions = app.status === 'pending' ? `
+            <button onclick="openApproveAppModal(${app.id}, '${(app.name||'').replace(/'/g,"'")}', '${app.email||''}')" class="btn-sm btn-approve">✓ Approve</button>
+            <button onclick="openRejectAppModal(${app.id}, '${(app.name||'').replace(/'/g,"'")}')" class="btn-sm btn-reject">✗ Reject</button>
+        ` : '';
+
+        return `<tr>
+            <td><input type="checkbox" class="wl-checkbox" data-id="${app.id}" onchange="updateBulkActionBtns()"></td>
+            <td style="font-weight:600;">${app.name || '—'}</td>
+            <td style="font-family:monospace;font-size:0.78rem;">${app.email || '—'}</td>
+            <td>$${Number(app.intended_deposit || 0).toLocaleString()}</td>
+            <td>${app.referral_source || '—'}</td>
+            <td style="font-size:0.75rem;color:var(--text-dim);">${app.created_at ? new Date(app.created_at).toLocaleDateString() : '—'}</td>
+            <td>${statusBadge(app.status)}</td>
+            <td class="actions-cell" style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                <button onclick="openAppDetail(${app.id})" class="btn-sm btn-view">📋 View</button>
+                ${pendingActions}
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function filterWaitingListTable() {
+    const q = (document.getElementById('wlSearch')?.value || '').toLowerCase();
+    if (!q) {
+        renderWaitingListTable(_allWaitingListData);
+        return;
+    }
+    const filtered = _allWaitingListData.filter(a =>
+        (a.name || '').toLowerCase().includes(q) ||
+        (a.email || '').toLowerCase().includes(q)
+    );
+    renderWaitingListTable(filtered);
+}
+
+function updateBulkActionBtns() {
+    const checked = document.querySelectorAll('.wl-checkbox:checked').length;
+    const btnA = document.getElementById('btnBulkApprove');
+    const btnR = document.getElementById('btnBulkReject');
+    if (btnA) btnA.style.display = checked > 0 ? 'inline-flex' : 'none';
+    if (btnR) btnR.style.display = checked > 0 ? 'inline-flex' : 'none';
+}
+
+function toggleSelectAllApplications(masterCb) {
+    document.querySelectorAll('.wl-checkbox').forEach(cb => { cb.checked = masterCb.checked; });
+    updateBulkActionBtns();
+}
+
+// ---- Approve Modal ----
+function openApproveAppModal(id, name, email) {
+    document.getElementById('approveAppId').value = id;
+    document.getElementById('approveAppInfo').textContent = `Approving application for ${name} (${email}). An invitation code will be generated and emailed.`;
+    document.getElementById('approveReason').value = '';
+    document.getElementById('approveAppModal').style.display = 'flex';
+}
+function closeApproveAppModal() {
+    document.getElementById('approveAppModal').style.display = 'none';
+}
+
+async function confirmApproveApplication() {
+    const id = document.getElementById('approveAppId').value;
+    const reason = document.getElementById('approveReason').value;
+    if (!id) return;
+    try {
+        const resp = await fetch(`/api/admin/waiting-list/${id}/approve`, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ reason })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            closeApproveAppModal();
+            showAdminToast(`✅ Application approved! Invite code: ${data.invitation_code || '—'}`, 'success');
+            loadWaitingList(_currentWLFilter);
+        } else {
+            showAdminToast('Error: ' + (data.message || 'Failed'), 'error');
+        }
+    } catch (e) {
+        showAdminToast('Network error: ' + e.message, 'error');
+    }
+}
+
+// ---- Reject Modal ----
+function openRejectAppModal(id, name) {
+    document.getElementById('rejectAppId').value = id;
+    document.getElementById('rejectAppInfo').textContent = `Rejecting application for ${name}. Please provide a reason.`;
+    document.getElementById('rejectAppReason').value = '';
+    document.getElementById('rejectAppModal').style.display = 'flex';
+}
+function closeRejectAppModal() {
+    document.getElementById('rejectAppModal').style.display = 'none';
+}
+
+async function confirmRejectApplication() {
+    const id = document.getElementById('rejectAppId').value;
+    const reason = document.getElementById('rejectAppReason').value;
+    if (!id) return;
+    try {
+        const resp = await fetch(`/api/admin/waiting-list/${id}/reject`, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ reason })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            closeRejectAppModal();
+            showAdminToast('⛔ Application rejected.', 'info');
+            loadWaitingList(_currentWLFilter);
+        } else {
+            showAdminToast('Error: ' + (data.message || 'Failed'), 'error');
+        }
+    } catch (e) {
+        showAdminToast('Network error: ' + e.message, 'error');
+    }
+}
+
+// ---- Bulk Actions ----
+async function bulkApproveApplications() {
+    const ids = [...document.querySelectorAll('.wl-checkbox:checked')].map(cb => parseInt(cb.dataset.id));
+    if (!ids.length) return;
+    if (!confirm(`Approve ${ids.length} selected application(s)?`)) return;
+    try {
+        const resp = await fetch('/api/admin/waiting-list/bulk', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ action: 'approve', ids })
+        });
+        const data = await resp.json();
+        showAdminToast(`✅ ${data.processed || ids.length} applications approved.`, 'success');
+        loadWaitingList(_currentWLFilter);
+    } catch (e) {
+        showAdminToast('Network error: ' + e.message, 'error');
+    }
+}
+
+async function bulkRejectApplications() {
+    const ids = [...document.querySelectorAll('.wl-checkbox:checked')].map(cb => parseInt(cb.dataset.id));
+    if (!ids.length) return;
+    const reason = prompt('Rejection reason for all selected (optional):') || '';
+    try {
+        const resp = await fetch('/api/admin/waiting-list/bulk', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ action: 'reject', ids, reason })
+        });
+        const data = await resp.json();
+        showAdminToast(`⛔ ${data.processed || ids.length} applications rejected.`, 'info');
+        loadWaitingList(_currentWLFilter);
+    } catch (e) {
+        showAdminToast('Network error: ' + e.message, 'error');
+    }
+}
+
+// ---- Application Detail Modal ----
+async function openAppDetail(id) {
+    const modal = document.getElementById('appDetailModal');
+    const content = document.getElementById('appDetailContent');
+    if (!modal || !content) return;
+    modal.style.display = 'flex';
+    content.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-dim);">Loading…</div>';
+    const app = _allWaitingListData.find(a => a.id === id);
+    if (!app) {
+        content.innerHTML = '<p style="color:#EF4444;">Application not found in current data.</p>';
+        return;
+    }
+    const row = (label, val) => `<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border);font-size:0.82rem;">
+        <span style="color:var(--text-faint);">${label}</span>
+        <span style="color:var(--text);font-weight:600;">${val || '—'}</span></div>`;
+    content.innerHTML = `
+        ${row('Name', app.name)}
+        ${row('Email', app.email)}
+        ${row('Intended Investment', '$' + Number(app.intended_deposit || 0).toLocaleString())}
+        ${row('Referral Source', app.referral_source)}
+        ${row('Notes', app.notes)}
+        ${row('Status', app.status?.toUpperCase())}
+        ${row('Rejection Reason', app.rejection_reason)}
+        ${row('Invitation Code', app.invitation_code)}
+        ${row('Submitted', app.created_at ? new Date(app.created_at).toLocaleString() : '—')}
+        ${row('Approved At', app.approved_at ? new Date(app.approved_at).toLocaleString() : '—')}
+    `;
+}
+function closeAppDetailModal() {
+    document.getElementById('appDetailModal').style.display = 'none';
+}
+
+// ============================================================
+// MEMBERS MANAGEMENT
+// ============================================================
+
+let _allMembersData = [];
+
+async function loadMembers() {
+    const tbody = document.getElementById('membersTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="loading">Loading members…</td></tr>';
+    try {
+        const resp = await fetch('/api/admin/users');
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.message);
+        _allMembersData = data.users || [];
+        renderMembersTable(_allMembersData);
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#EF4444;padding:1.5rem;">Error loading members: ${e.message}</td></tr>`;
+    }
+}
+
+function renderMembersTable(users) {
+    const tbody = document.getElementById('membersTableBody');
+    if (!tbody) return;
+    if (!users.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-faint);">No members found.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = users.map(u => `<tr>
+        <td style="font-weight:600;">${u.username || '—'}</td>
+        <td style="font-family:monospace;font-size:0.78rem;">${u.email || '—'}</td>
+        <td style="color:var(--gold);font-weight:700;">$${Number(u.balance || 0).toFixed(2)}</td>
+        <td>$${Number(u.total_deposits || 0).toFixed(2)}</td>
+        <td style="font-size:0.75rem;color:var(--text-dim);">${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+        <td>${u.is_admin
+            ? '<span style="color:var(--gold);font-size:0.7rem;font-weight:600;background:var(--gold-dim);padding:0.15rem 0.5rem;border-radius:20px;">Admin</span>'
+            : '<span style="color:var(--green);font-size:0.7rem;font-weight:600;background:rgba(74,222,128,0.1);padding:0.15rem 0.5rem;border-radius:20px;">Active</span>'}
+        </td>
+    </tr>`).join('');
+}
+
+function filterMembersTable() {
+    const q = (document.getElementById('membersSearch')?.value || '').toLowerCase();
+    if (!q) { renderMembersTable(_allMembersData); return; }
+    renderMembersTable(_allMembersData.filter(u =>
+        (u.username || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q)
+    ));
+}
+
+// ---- Admin Toast (reusable) ----
+function showAdminToast(msg, type = 'info') {
+    let toast = document.getElementById('adminToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'adminToast';
+        toast.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;padding:0.8rem 1.2rem;border-radius:8px;font-size:0.82rem;font-weight:600;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4);transition:all 0.3s ease;';
+        document.body.appendChild(toast);
+    }
+    const colors = { success: '#4ADE80', error: '#EF4444', info: '#C8A85E' };
+    toast.style.background = '#141926';
+    toast.style.border = `1px solid ${colors[type] || colors.info}`;
+    toast.style.color = colors[type] || colors.info;
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateY(10px)'; }, 4000);
+}

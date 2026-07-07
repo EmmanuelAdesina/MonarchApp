@@ -48,6 +48,12 @@
             <button class="admin-tab active" onclick="switchAdminTab('withdrawals')" data-tab="withdrawals">
                 💸 Withdrawals
             </button>
+            <button class="admin-tab" onclick="switchAdminTab('waiting-list')" data-tab="waiting-list" id="waitingListTab">
+                👥 Waiting List <span id="waitingListBadge" class="admin-badge" style="display:none;"></span>
+            </button>
+            <button class="admin-tab" onclick="switchAdminTab('members')" data-tab="members">
+                🧑‍💼 Members
+            </button>
             <button class="admin-tab" onclick="switchAdminTab('receipt-library')" data-tab="receipt-library">
                 📄 Receipt Library
             </button>
@@ -66,6 +72,8 @@
         <!-- TAB 1: WITHDRAWALS                                               -->
         <!-- ================================================================ -->
         <div id="tab-withdrawals" class="admin-tab-content active">
+            <!-- Withdrawal Cycle Info -->
+            <div class="cycle-info-bar" id="cycleInfoBar" style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;background:var(--bg-elev);border:1px solid var(--border);border-radius:8px;padding:0.8rem 1.2rem;margin-bottom:1rem;font-size:0.78rem;color:var(--text-dim);">Loading cycle info…</div>
             <div class="panel">
                 <div class="panel-header">
                     <h3>💸 Withdrawal Requests</h3>
@@ -317,6 +325,110 @@
 
     </div>
 
+        <!-- ================================================================ -->
+        <!-- TAB: WAITING LIST                                                -->
+        <!-- ================================================================ -->
+        <div id="tab-waiting-list" class="admin-tab-content">
+
+            <!-- Waiting List Stats -->
+            <div class="stats-grid" style="margin-bottom:1.5rem;">
+                <div class="stat-card">
+                    <div class="lbl">Total Applications</div>
+                    <div class="num" id="wlStatTotal">—</div>
+                    <div class="sub">All time</div>
+                </div>
+                <div class="stat-card">
+                    <div class="lbl">Pending Review</div>
+                    <div class="num" id="wlStatPending" style="color:#F59E0B;">—</div>
+                    <div class="sub">Awaiting decision</div>
+                </div>
+                <div class="stat-card">
+                    <div class="lbl">Approved</div>
+                    <div class="num" id="wlStatApproved" style="color:var(--green);">—</div>
+                    <div class="sub">Access granted</div>
+                </div>
+                <div class="stat-card">
+                    <div class="lbl">Rejected</div>
+                    <div class="num" id="wlStatRejected" style="color:#EF4444;">—</div>
+                    <div class="sub">Access denied</div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>👥 Waiting List Applications</h3>
+                    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                        <!-- Search -->
+                        <input type="text" id="wlSearch" placeholder="Search name or email…"
+                            class="admin-input" style="padding:0.35rem 0.6rem;font-size:0.75rem;width:200px;margin:0;"
+                            oninput="filterWaitingListTable()">
+                        <!-- Status filter -->
+                        <div class="tabs" id="wlFilterTabs" style="gap:0;">
+                            <button class="tab active" onclick="loadWaitingList('')" id="wlTabAll">All</button>
+                            <button class="tab" onclick="loadWaitingList('pending')" id="wlTabPending">Pending</button>
+                            <button class="tab" onclick="loadWaitingList('approved')" id="wlTabApproved">Approved</button>
+                            <button class="tab" onclick="loadWaitingList('rejected')" id="wlTabRejected">Rejected</button>
+                        </div>
+                        <!-- Bulk Actions -->
+                        <button class="btn-sm btn-approve" onclick="bulkApproveApplications()" id="btnBulkApprove" style="display:none;">✓ Approve Selected</button>
+                        <button class="btn-sm btn-reject" onclick="bulkRejectApplications()" id="btnBulkReject" style="display:none;">✕ Reject Selected</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:36px;"><input type="checkbox" id="wlSelectAll" onchange="toggleSelectAllApplications(this)"></th>
+                                <th>Applicant</th>
+                                <th>Email</th>
+                                <th>Investment</th>
+                                <th>Referred By</th>
+                                <th>Submitted</th>
+                                <th>Status</th>
+                                <th class="actions-cell">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="waitingListBody">
+                            <tr><td colspan="8" class="loading">Loading applications…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- TAB: MEMBERS                                                     -->
+        <!-- ================================================================ -->
+        <div id="tab-members" class="admin-tab-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>🧑‍💼 Registered Members</h3>
+                    <input type="text" id="membersSearch" placeholder="Search username or email…"
+                        class="admin-input" style="padding:0.35rem 0.6rem;font-size:0.75rem;width:220px;margin:0;"
+                        oninput="filterMembersTable()">
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Balance</th>
+                                <th>Deposits</th>
+                                <th>Joined</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="membersTableBody">
+                            <tr><td colspan="6" class="loading">Loading members…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    <!-- ================================================================ -->
+    <!-- MODALS                                                          -->
     <!-- ================================================================ -->
     <!-- MODALS                                                          -->
     <!-- ================================================================ -->
@@ -480,6 +592,51 @@
     </div>
 
 </div>
+
+    <!-- Approve Application Modal -->
+    <div id="approveAppModal" class="admin-modal" style="display:none;">
+        <div class="modal-content">
+            <h3 style="color:var(--green);border-bottom:1px solid var(--border);padding-bottom:0.8rem;margin-bottom:1.2rem;">✅ Approve Application</h3>
+            <input type="hidden" id="approveAppId">
+            <p style="font-size:0.82rem;color:var(--text-dim);margin-bottom:1rem;" id="approveAppInfo"></p>
+            <div class="form-group">
+                <label for="approveReason">Approval Notes (Optional)</label>
+                <textarea id="approveReason" placeholder="e.g. High-net-worth applicant, KYC verified." rows="2" class="admin-input"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button type="button" onclick="closeApproveAppModal()" class="btn-ghost">Cancel</button>
+                <button onclick="confirmApproveApplication()" class="btn-gold" style="background:var(--green);color:#0A0D1A;">Approve & Send Invite</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reject Application Modal -->
+    <div id="rejectAppModal" class="admin-modal" style="display:none;">
+        <div class="modal-content">
+            <h3 style="color:#EF4444;border-bottom:1px solid var(--border);padding-bottom:0.8rem;margin-bottom:1.2rem;">⛔ Reject Application</h3>
+            <input type="hidden" id="rejectAppId">
+            <p style="font-size:0.82rem;color:var(--text-dim);margin-bottom:1rem;" id="rejectAppInfo"></p>
+            <div class="form-group">
+                <label for="rejectAppReason">Reason for Rejection *</label>
+                <textarea id="rejectAppReason" placeholder="e.g. Does not meet minimum investment criteria." rows="3" class="admin-input"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button type="button" onclick="closeRejectAppModal()" class="btn-ghost">Cancel</button>
+                <button onclick="confirmRejectApplication()" class="btn-gold" style="background:#EF4444;color:white;">Confirm Rejection</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Detail Modal -->
+    <div id="appDetailModal" class="admin-modal" style="display:none;">
+        <div class="modal-content" style="max-width:540px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--border);padding-bottom:0.8rem;margin-bottom:1.2rem;">
+                <h3 style="color:var(--gold);font-size:1rem;">👤 Application Detail</h3>
+                <button onclick="closeAppDetailModal()" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.2rem;">✕</button>
+            </div>
+            <div id="appDetailContent"></div>
+        </div>
+    </div>
 
 <script src="{{ url_for('static', filename='admin.js') }}"></script>
 {% endblock %}
