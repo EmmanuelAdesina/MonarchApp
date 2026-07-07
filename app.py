@@ -25,7 +25,7 @@ dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path, override=True)
 
-app = Flask(__name__, instance_path=os.path.join(tempfile.gettempdir(), 'instance'))
+app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 
 # --- New Financial Policies ---
@@ -49,7 +49,7 @@ refresh_payment_settings()
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///monarch.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'uploads')
+UPLOAD_FOLDER = os.path.join(app.root_path, 'static', 'uploads')
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -58,7 +58,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 NOWPAYMENTS_BASE = 'https://api.nowpayments.io/v1'
 EXCHANGE_RATE_CACHE_DURATION_MINUTES = 60
 PAYSTACK_FALLBACK_RATE = float(os.getenv('PAYSTACK_FALLBACK_RATE', '1554.20'))
-EXCHANGE_RATE_CACHE_FILE = os.path.join(tempfile.gettempdir(), 'paystack_exchange_rate.json')
+EXCHANGE_RATE_CACHE_FILE = os.path.join(app.root_path, 'instance', 'paystack_exchange_rate.json')
 os.makedirs(os.path.dirname(EXCHANGE_RATE_CACHE_FILE), exist_ok=True)
 
 
@@ -3310,6 +3310,5 @@ with app.app_context():
     except Exception as err:
         print("Migration warning (approving pre-existing users):", err)
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 3000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
