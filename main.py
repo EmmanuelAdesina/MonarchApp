@@ -46,7 +46,7 @@ def refresh_payment_settings():
 
 
 refresh_payment_settings()
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///monarch.db'
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'uploads')
@@ -3041,228 +3041,6 @@ def render_marketing_receipt_print(receipt_id):
 # ==================================================================
 with app.app_context():
     db.create_all()
-    # Dynamic SQLite migration for receipt_image column
-    try:
-        raw_conn = db.engine.raw_connection()
-        cursor = raw_conn.cursor()
-        cursor.execute("SELECT receipt_image FROM withdrawal_request LIMIT 1")
-        raw_conn.close()
-    except Exception:
-        try:
-            db.session.rollback()
-            raw_conn = db.engine.raw_connection()
-            cursor = raw_conn.cursor()
-            cursor.execute("ALTER TABLE withdrawal_request ADD COLUMN receipt_image VARCHAR(250)")
-            raw_conn.commit()
-            raw_conn.close()
-            print("Successfully migrated database: added receipt_image column.")
-        except Exception as err:
-            print("Migration warning (ignored if column exists):", err)
-
-    # Dynamic SQLite migration for routing_number column
-    try:
-        raw_conn = db.engine.raw_connection()
-        cursor = raw_conn.cursor()
-        cursor.execute("SELECT routing_number FROM withdrawal_request LIMIT 1")
-        raw_conn.close()
-    except Exception:
-        try:
-            db.session.rollback()
-            raw_conn = db.engine.raw_connection()
-            cursor = raw_conn.cursor()
-            cursor.execute("ALTER TABLE withdrawal_request ADD COLUMN routing_number VARCHAR(50)")
-            raw_conn.commit()
-            raw_conn.close()
-            print("Successfully migrated database: added routing_number column.")
-        except Exception as err:
-            print("Migration warning (routing_number):", err)
-
-    # Dynamic SQLite migration for txid column
-    try:
-        raw_conn = db.engine.raw_connection()
-        cursor = raw_conn.cursor()
-        cursor.execute("SELECT txid FROM withdrawal_request LIMIT 1")
-        raw_conn.close()
-    except Exception:
-        try:
-            db.session.rollback()
-            raw_conn = db.engine.raw_connection()
-            cursor = raw_conn.cursor()
-            cursor.execute("ALTER TABLE withdrawal_request ADD COLUMN txid VARCHAR(200)")
-            raw_conn.commit()
-            raw_conn.close()
-            print("Successfully migrated database: added txid column.")
-        except Exception as err:
-            print("Migration warning (txid):", err)
-
-    # Dynamic SQLite migration for swift_code column
-    try:
-        raw_conn = db.engine.raw_connection()
-        cursor = raw_conn.cursor()
-        cursor.execute("SELECT swift_code FROM withdrawal_request LIMIT 1")
-        raw_conn.close()
-    except Exception:
-        try:
-            db.session.rollback()
-            raw_conn = db.engine.raw_connection()
-            cursor = raw_conn.cursor()
-            cursor.execute("ALTER TABLE withdrawal_request ADD COLUMN swift_code VARCHAR(20)")
-            raw_conn.commit()
-            raw_conn.close()
-            print("Successfully migrated database: added swift_code column.")
-        except Exception as err:
-            print("Migration warning (swift_code):", err)
-
-    # Dynamic migration for referral columns
-    try:
-        raw_conn = db.engine.raw_connection()
-        cursor = raw_conn.cursor()
-        cursor.execute("SELECT referral_code FROM user LIMIT 1")
-        raw_conn.close()
-    except Exception:
-        try:
-            db.session.rollback()
-            raw_conn = db.engine.raw_connection()
-            cursor = raw_conn.cursor()
-            cursor.execute("ALTER TABLE user ADD COLUMN referral_code VARCHAR(10) UNIQUE")
-            raw_conn.commit()
-            raw_conn.close()
-            print("Successfully migrated database: added referral_code column.")
-        except Exception as err:
-            print("Migration warning (ignored if column exists):", err)
-    try:
-        raw_conn = db.engine.raw_connection()
-        cursor = raw_conn.cursor()
-        cursor.execute("SELECT referred_by FROM user LIMIT 1")
-        raw_conn.close()
-    except Exception:
-        try:
-            db.session.rollback()
-            raw_conn = db.engine.raw_connection()
-            cursor = raw_conn.cursor()
-            cursor.execute("ALTER TABLE user ADD COLUMN referred_by INTEGER REFERENCES user(id)")
-            raw_conn.commit()
-            raw_conn.close()
-            print("Successfully migrated database: added referred_by column.")
-        except Exception as err:
-            print("Migration warning (ignored if column exists):", err)
-    try:
-        raw_conn = db.engine.raw_connection()
-        cursor = raw_conn.cursor()
-        cursor.execute("SELECT referral_earnings FROM user LIMIT 1")
-        raw_conn.close()
-    except Exception:
-        try:
-            db.session.rollback()
-            raw_conn = db.engine.raw_connection()
-            cursor = raw_conn.cursor()
-            cursor.execute("ALTER TABLE user ADD COLUMN referral_earnings FLOAT DEFAULT 0.0")
-            raw_conn.commit()
-            raw_conn.close()
-            print("Successfully migrated database: added referral_earnings column.")
-        except Exception as err:
-            print("Migration warning (ignored if column exists):", err)
-
-    # Dynamic migration for user crypto wallet columns
-    try:
-        raw_conn = db.engine.raw_connection()
-        cursor = raw_conn.cursor()
-        cursor.execute("SELECT crypto_wallet_address FROM user LIMIT 1")
-        raw_conn.close()
-    except Exception:
-        try:
-            db.session.rollback()
-            raw_conn = db.engine.raw_connection()
-            cursor = raw_conn.cursor()
-            cursor.execute("ALTER TABLE user ADD COLUMN crypto_wallet_address VARCHAR(200)")
-            cursor.execute("ALTER TABLE user ADD COLUMN crypto_network VARCHAR(50)")
-            raw_conn.commit()
-            raw_conn.close()
-            print("Successfully migrated database: added crypto wallet columns to user table.")
-        except Exception as err:
-            print("Migration warning (user crypto wallet):", err)
-
-    # Set default network for existing users
-    try:
-        raw_conn = db.engine.raw_connection()
-        cursor = raw_conn.cursor()
-        cursor.execute("UPDATE user SET crypto_network = 'Ethereum (ERC-20)' WHERE crypto_network IS NULL")
-        raw_conn.commit()
-        raw_conn.close()
-    except Exception as err:
-        print("Migration warning (setting default network):", err)
-
-    # Generate referral codes for existing users that don't have one
-    try:
-        raw_conn = db.engine.raw_connection()
-        cursor = raw_conn.cursor()
-        cursor.execute("SELECT id, referral_code FROM user WHERE referral_code IS NULL OR referral_code = ''")
-        users_missing = cursor.fetchall()
-        for uid, _ in users_missing:
-            code = generate_referral_code()
-            cursor.execute("UPDATE user SET referral_code = ? WHERE id = ?", (code, uid))
-        if users_missing:
-            raw_conn.commit()
-        raw_conn.close()
-    except Exception as err:
-        print("Migration warning (generating codes):", err)
-
-    # Dynamic SQLite migrations for new upgraded fields
-    new_user_cols = [
-        ("crypto_currency", "VARCHAR(10) DEFAULT 'USDT'"),
-        ("wallet_verified", "BOOLEAN DEFAULT 0"),
-        ("pending_withdrawal", "DOUBLE DEFAULT 0.0"),
-        ("total_withdrawn", "DOUBLE DEFAULT 0.0"),
-        ("last_withdrawal_date", "DATETIME"),
-        ("is_approved", "BOOLEAN DEFAULT 0"),
-        ("invitation_code", "VARCHAR(50)"),
-        ("invitation_expires_at", "DATETIME"),
-        ("mentor_id", "INTEGER"),
-        ("milestones_sent", "TEXT DEFAULT '[]'")
-    ]
-    for col_name, col_type in new_user_cols:
-        try:
-            raw_conn = db.engine.raw_connection()
-            cursor = raw_conn.cursor()
-            cursor.execute(f"SELECT {col_name} FROM user LIMIT 1")
-            raw_conn.close()
-        except Exception:
-            try:
-                db.session.rollback()
-                raw_conn = db.engine.raw_connection()
-                cursor = raw_conn.cursor()
-                cursor.execute(f"ALTER TABLE user ADD COLUMN {col_name} {col_type}")
-                raw_conn.commit()
-                raw_conn.close()
-                print(f"Successfully migrated user table: added {col_name} column.")
-            except Exception as err:
-                print(f"Migration warning (user {col_name}):", err)
-
-    new_withdrawal_cols = [
-        ("crypto_wallet_address", "VARCHAR(200)"),
-        ("crypto_network", "VARCHAR(50)"),
-        ("crypto_currency", "VARCHAR(10) DEFAULT 'USDT'"),
-        ("admin_notes", "TEXT"),
-        ("marked_paid_at", "DATETIME"),
-        ("marked_paid_by", "INTEGER")
-    ]
-    for col_name, col_type in new_withdrawal_cols:
-        try:
-            raw_conn = db.engine.raw_connection()
-            cursor = raw_conn.cursor()
-            cursor.execute(f"SELECT {col_name} FROM withdrawal_request LIMIT 1")
-            raw_conn.close()
-        except Exception:
-            try:
-                db.session.rollback()
-                raw_conn = db.engine.raw_connection()
-                cursor = raw_conn.cursor()
-                cursor.execute(f"ALTER TABLE withdrawal_request ADD COLUMN {col_name} {col_type}")
-                raw_conn.commit()
-                raw_conn.close()
-                print(f"Successfully migrated withdrawal_request table: added {col_name} column.")
-            except Exception as err:
-                print(f"Migration warning (withdrawal {col_name}):", err)
 
     # Initialize default withdrawal settings
     try:
@@ -3272,18 +3050,17 @@ with app.app_context():
                 tax_rate=20.00,
                 processing_day=31,
                 cut_off_day=25,
-                default_currency='USDT',
-                default_network='Ethereum (ERC-20)',
+                default_currency="USDT",
+                default_network="Ethereum (ERC-20)",
                 auto_approve=False,
-                allow_crypto_payouts=True
+                allow_crypto_payouts=True,
             )
             db.session.add(settings)
             db.session.commit()
-            print("Successfully initialized default withdrawal settings.")
     except Exception as err:
-        print("Initialization warning (settings):", err)
+        print(err)
 
-    # Initialize default AI mentor (Sarah Mitchell)
+    # Initialize default mentor
     try:
         if not Mentor.query.first():
             mentor = Mentor(
@@ -3291,25 +3068,12 @@ with app.app_context():
                 title="Senior Wealth Advisor",
                 experience="8 years in private wealth management",
                 personality="Caring, supportive, professional",
-                photo_url="/static/uploads/sarah_mitchell.jpg"
+                photo_url="/static/uploads/sarah_mitchell.jpg",
             )
             db.session.add(mentor)
             db.session.commit()
-            print("Successfully initialized default AI Mentor Sarah Mitchell.")
     except Exception as err:
-        print("Initialization warning (mentor):", err)
-
-    # Mark existing users as approved so they are not locked out
-    try:
-        raw_conn = db.engine.raw_connection()
-        cursor = raw_conn.cursor()
-        cursor.execute("UPDATE user SET is_approved = 1 WHERE is_approved IS NULL")
-        raw_conn.commit()
-        raw_conn.close()
-        print("Set is_approved = 1 for all pre-existing users.")
-    except Exception as err:
-        print("Migration warning (approving pre-existing users):", err)
-
+        print(err)
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3000))
     app.run(host="0.0.0.0", port=port, debug=False)
