@@ -156,9 +156,10 @@ async function pollPaymentStatus() {
 async function submitDeposit() {
     const amountInput = document.getElementById('depositAmount');
     const amount = parseFloat(amountInput?.value || '0');
+    const minLimit = typeof USER_MINIMUM_DEPOSIT !== 'undefined' ? USER_MINIMUM_DEPOSIT : 500.0;
     
-    if (!amount || amount < 500) {
-        alert('❌ Minimum deposit is $500.00');
+    if (!amount || amount < minLimit) {
+        alert(`❌ Minimum deposit is $${minLimit.toFixed(2)}`);
         return;
     }
 

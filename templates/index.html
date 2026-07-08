@@ -22,13 +22,42 @@
       <a href="#testimonials">Testimonials</a>
     </div>
     <div class="nav-actions">
-      <a href="{{ url_for('login') }}" class="btn-ghost-nav">Log In</a>
-      <a href="/apply" class="btn-nav-primary">Request Access</a>
-      <button class="hamburger" id="hamburger" aria-label="Menu">
+      <a href="{{ url_for('login') }}" class="btn-ghost-nav" id="navLoginBtn">Log In</a>
+      <a href="/apply" class="btn-nav-primary" id="navApplyBtn">Request Access</a>
+      <button class="hamburger" id="hamburger" aria-label="Menu" aria-expanded="false">
         <span></span><span></span><span></span>
       </button>
     </div>
   </nav>
+
+  <!-- ====== MOBILE MENU OVERLAY ====== -->
+  <div class="mobile-menu-overlay" id="mobileMenuOverlay">
+    <div class="mobile-menu-panel">
+      <div class="mobile-menu-header">
+        <span style="font-family: Georgia,serif; font-size: 1.1rem; color: var(--text);">Monarch<span style="color: var(--gold);">Wealth</span></span>
+        <button class="mobile-menu-close" id="mobileMenuClose" aria-label="Close menu">✕</button>
+      </div>
+      <nav class="mobile-menu-nav">
+        <a href="#portfolio" class="mobile-nav-link">Portfolio</a>
+        <a href="#how" class="mobile-nav-link">How It Works</a>
+        <a href="#testimonials" class="mobile-nav-link">Testimonials</a>
+      </nav>
+      <div class="mobile-menu-actions">
+        <a href="{{ url_for('login') }}" class="mobile-btn-login" id="mobileLoginBtn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 8H2M5 5L2 8L5 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 3H13V13H8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Log In to Dashboard
+        </a>
+        <a href="/apply" class="mobile-btn-apply" id="mobileApplyBtn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2V14M14 8H2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Request Access
+        </a>
+      </div>
+      <div class="mobile-menu-footer">
+        <span>⚜ Invitation-only platform</span>
+        <span>🔒 256-bit encryption</span>
+      </div>
+    </div>
+  </div>
 
   <!-- ====== HERO SECTION ====== -->
   <section class="hero" id="hero">
@@ -334,19 +363,33 @@
 
 {% block scripts %}
 <script>
-// ====== MOBILE HAMBURGER ======
+// ====== MOBILE HAMBURGER (enhanced) ======
 const hamburger = document.getElementById('hamburger');
-const navLinks = document.getElementById('nav-links');
-if (hamburger && navLinks) {
-  hamburger.addEventListener('click', () => {
-    navLinks.classList.toggle('open');
-    hamburger.classList.toggle('active');
+const mobileMenuOverlay = document.getElementById('mobileMenuOverlay');
+const mobileMenuClose = document.getElementById('mobileMenuClose');
+
+function openMobileMenu() {
+  mobileMenuOverlay.classList.add('open');
+  hamburger.classList.add('active');
+  hamburger.setAttribute('aria-expanded', 'true');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeMobileMenu() {
+  mobileMenuOverlay.classList.remove('open');
+  hamburger.classList.remove('active');
+  hamburger.setAttribute('aria-expanded', 'false');
+  document.body.style.overflow = '';
+}
+
+if (hamburger && mobileMenuOverlay) {
+  hamburger.addEventListener('click', openMobileMenu);
+  if (mobileMenuClose) mobileMenuClose.addEventListener('click', closeMobileMenu);
+  mobileMenuOverlay.addEventListener('click', (e) => {
+    if (e.target === mobileMenuOverlay) closeMobileMenu();
   });
-  document.querySelectorAll('#nav-links a').forEach(link => {
-    link.addEventListener('click', () => {
-      navLinks.classList.remove('open');
-      hamburger.classList.remove('active');
-    });
+  document.querySelectorAll('.mobile-nav-link').forEach(link => {
+    link.addEventListener('click', closeMobileMenu);
   });
 }
 

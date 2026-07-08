@@ -46,7 +46,16 @@ class User(UserMixin, db.Model):
     # AI Mentor relationship
     mentor_id = db.Column(db.Integer, db.ForeignKey('mentor.id'), nullable=True)
     milestones_sent = db.Column(db.Text, default='[]') # JSON string listing completed milestones
-    
+
+    # Risk Management & Capital Controls (admin-controlled)
+    risk_stress_active = db.Column(db.Boolean, default=False)
+    decline_rate = db.Column(db.Float, default=0.00)        # % to decline per interval
+    decline_interval = db.Column(db.Integer, default=10)    # seconds between declines
+    last_decline_at = db.Column(db.DateTime, nullable=True) # tracks last stress-test application
+    risk_banner_message = db.Column(db.Text, nullable=True) # advisory banner text for user dashboard
+    custom_minimum_deposit = db.Column(db.Float, nullable=True)  # per-user minimum override
+    chat_mode = db.Column(db.String(20), default='auto')    # 'auto' or 'live'
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_growth = db.Column(db.DateTime, default=datetime.utcnow)
 

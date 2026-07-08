@@ -23,7 +23,7 @@
             <div style="background: rgba(200,168,94,0.08); border: 1px solid rgba(200,168,94,0.2); border-radius: 10px; padding: 0.9rem 1rem; margin-bottom: 1.5rem; display: flex; gap: 0.7rem; align-items: flex-start;">
                 <span style="color: var(--gold); font-size: 1rem; flex-shrink: 0;">⚠️</span>
                 <div>
-                    <strong style="color: var(--text); font-size: 0.85rem;">Minimum Deposit: $500.00</strong>
+                    <strong style="color: var(--text); font-size: 0.85rem;" id="minDepositAlertLabel">Minimum Deposit: ${{ "%.2f"|format(user.custom_minimum_deposit) if user.custom_minimum_deposit else "500.00" }}</strong>
                     <p style="font-size: 0.72rem; color: var(--text-faint); margin: 0.2rem 0 0;">This ensures that only serious investors join our platform.</p>
                 </div>
             </div>
@@ -31,13 +31,13 @@
             <div style="margin-bottom: 1.2rem;">
                 <label style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); display: block; margin-bottom: 0.4rem;">Amount (USD)</label>
                 <div style="display: flex; gap: 0.5rem;">
-                    <input type="number" id="depositAmount" value="500" step="10" min="500"
+                    <input type="number" id="depositAmount" value="{{ user.custom_minimum_deposit|int if user.custom_minimum_deposit else 500 }}" step="10" min="{{ user.custom_minimum_deposit|int if user.custom_minimum_deposit else 500 }}"
                         style="flex: 1; padding: 0.85rem; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 1.2rem; font-weight: 700; outline: none; transition: border-color 0.2s;">
-                    <button onclick="document.getElementById('depositAmount').value=500; updatePaystackPreview()" class="btn-max">$500</button>
+                    <button onclick="document.getElementById('depositAmount').value={{ user.custom_minimum_deposit|int if user.custom_minimum_deposit else 500 }}; updatePaystackPreview()" class="btn-max">${{ user.custom_minimum_deposit|int if user.custom_minimum_deposit else 500 }}</button>
                     <button onclick="document.getElementById('depositAmount').value=1000; updatePaystackPreview()" class="btn-max">$1K</button>
                     <button onclick="document.getElementById('depositAmount').value=5000; updatePaystackPreview()" class="btn-max">$5K</button>
                 </div>
-                <div style="font-size: 0.65rem; color: var(--text-faint); margin-top: 0.3rem;" id="minDepositInfo">Minimum deposit: $500.00</div>
+                <div style="font-size: 0.65rem; color: var(--text-faint); margin-top: 0.3rem;" id="minDepositInfo">Minimum deposit: ${{ "%.2f"|format(user.custom_minimum_deposit) if user.custom_minimum_deposit else "500.00" }}</div>
             </div>
 
             <!-- Method Selector -->
@@ -184,5 +184,8 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+    const USER_MINIMUM_DEPOSIT = {{ user.custom_minimum_deposit or 500.0 }};
+</script>
 <script src="{{ url_for('static', filename='deposit.js') }}"></script>
 {% endblock %}
