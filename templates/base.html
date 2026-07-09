@@ -14,9 +14,9 @@
 <body>
     {% block content %}{% endblock %}
     <nav class="mobile-bottom-nav" aria-label="Mobile quick navigation">
-        <a href="{{ url_for('index') }}">Home</a>
-        <a href="{{ url_for('login') }}">Login</a>
-        <a href="{{ url_for('register') }}">Register</a>
+        <a href="{{ url_for('index') }}" class="mbn-link">Home</a>
+        <a href="{{ url_for('login') }}" class="mbn-link mbn-login btn-ghost-nav">Login</a>
+        <a href="{{ url_for('register') }}" class="mbn-link mbn-register btn-nav-primary">Register</a>
     </nav>
     {% block scripts %}{% endblock %}
 </body>

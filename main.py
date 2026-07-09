@@ -549,21 +549,25 @@ def api_register():
     password = str(data.get('password', '') or '')
     referral_code = str(data.get('referral_code', '') or '').strip()
 
+    if not code:
+        return jsonify({'success': False, 'message': 'Invitation code is required'}), 400
     if not username or not email or not password:
         return jsonify({'success': False, 'message': 'Username, email, and password are required'}), 400
+
+    app_entry = WaitingList.query.filter_by(invitation_code=code, status='approved').first()
+    if not app_entry:
+        return jsonify({'success': False, 'message': 'Invalid or expired invitation code'}), 400
+    if app_entry.expires_at and app_entry.expires_at < _now():
+        app_entry.status = 'expired'
+        db.session.commit()
+        return jsonify({'success': False, 'message': 'Invitation code has expired'}), 400
+    if app_entry.email.lower() != email.lower():
+        return jsonify({'success': False, 'message': 'Email must match the approved application email'}), 400
 
     if User.query.filter_by(username=username).first():
         return jsonify({'success': False, 'message': 'Username already exists'}), 400
     if User.query.filter_by(email=email).first():
         return jsonify({'success': False, 'message': 'Email already registered'}), 400
-
-    app_entry = None
-    if code:
-        app_entry = WaitingList.query.filter_by(invitation_code=code, status='approved').first()
-        if app_entry and app_entry.expires_at and app_entry.expires_at < _now():
-            app_entry.status = 'expired'
-            db.session.commit()
-            app_entry = None
 
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     user = User(
@@ -572,8 +576,8 @@ def api_register():
         password_hash=hashed.decode('utf-8'),
         is_approved=True,
         created_at=_now(),
-        invitation_code=code if app_entry else None,
-        invitation_expires_at=app_entry.expires_at if app_entry else None
+        invitation_code=code,
+        invitation_expires_at=app_entry.expires_at
     )
 
     if referral_code:
@@ -602,14 +606,14 @@ def register():
         app_entry = WaitingList.query.filter_by(invitation_code=code, status='approved').first()
         if app_entry:
             if app_entry.expires_at and app_entry.expires_at < _now():
-                flash('Your invitation code has expired. You can still register directly using your email and password.')
+                flash('Your invitation code has expired. Please request a new invitation from the admin.')
                 app_entry.status = 'expired'
                 db.session.commit()
                 code = ''
             else:
                 email = app_entry.email
         else:
-            flash('Invalid or expired invitation code. You can register freely with your email and password.')
+            flash('Invalid or expired invitation code. Please request a valid invitation from the admin.')
             code = ''
 
     return render_template('register.html', code=code, email=email)

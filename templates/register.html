@@ -37,8 +37,15 @@
                     style="width: 100%; padding: 0.8rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.3s;"
                     onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border)'">
                 <p style="margin-top:0.6rem;font-size:0.8rem;color:var(--text-faint);">
-                    Register using any email and password. The application form is separate.
+                    Registration is by approved invitation only. Enter your invite code below.
                 </p>
+            </div>
+
+            <div>
+                <label for="invitation_code" style="display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); margin-bottom: 0.5rem;">Invitation Code</label>
+                <input type="text" id="invitation_code" name="invitation_code" required placeholder="Enter your invitation code" value="{{ code }}"
+                    style="width: 100%; padding: 0.8rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.3s; text-transform: uppercase;"
+                    onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border)'">
             </div>
 
             <div>
@@ -56,8 +63,6 @@
                     style="width: 100%; padding: 0.8rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.3s; text-transform: uppercase;"
                     onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border)'">
             </div>
-
-            <input type="hidden" id="invitation_code" name="invitation_code" value="{{ code }}">
 
             <button type="submit" id="registerButton"
                 style="margin-top: 0.5rem; width: 100%; padding: 0.9rem; background: var(--gold); color: var(--bg); border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.3s;"

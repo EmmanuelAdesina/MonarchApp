@@ -1849,6 +1849,14 @@ tr:hover td {
   .trust-divider { display: none; }
 
   .hero-title { font-size: clamp(2rem, 8vw, 2.8rem); }
+
+  /* Mobile bottom nav: make auth actions prominent and easily tappable */
+  .mobile-bottom-nav { display: flex; }
+  .mobile-bottom-nav a { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; padding: 0.6rem 0.9rem; min-height: 48px; border-radius: 12px; font-size: 0.95rem; font-weight: 700; text-decoration: none; }
+  .mobile-bottom-nav .mbn-link { color: var(--text-secondary); background: transparent; border: none; }
+  .mobile-bottom-nav .mbn-login { color: var(--text-primary); background: rgba(255,255,255,0.03); border: 1px solid var(--border-primary); padding: 0.55rem 1rem; border-radius: 12px; }
+  .mobile-bottom-nav .mbn-register { background: var(--gold); color: var(--bg-primary); padding: 0.55rem 1rem; border-radius: 12px; box-shadow: var(--shadow-gold); }
+  .mobile-bottom-nav a:active, .mobile-bottom-nav a:focus { outline: none; transform: translateY(-1px); }
 }
 
 /* Dashboard legacy compatibility */
