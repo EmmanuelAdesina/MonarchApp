@@ -3,7 +3,9 @@ import bcrypt
 import random
 import json
 import tempfile
+import smtplib
 import requests as http_requests
+from email.message import EmailMessage
 from flask import Flask, render_template, render_template_string, request, redirect, url_for, flash, jsonify, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from datetime import datetime, timedelta, timezone
@@ -16,6 +18,7 @@ import hashlib
 def _now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 from functools import wraps, lru_cache
+from sqlalchemy import inspect
 from database import db, User, Transaction, WithdrawalRequest, PaymentVerification, ReferralBonus, generate_referral_code, WithdrawalSettings, WaitingList, Mentor, MentorMessage
 from utils import calculate_growth, generate_activity_feed
 from dotenv import load_dotenv
@@ -140,6 +143,63 @@ def ensure_admin_access(user):
     return False
 
 
+def get_effective_minimum_deposit(user):
+    if not user:
+        return MINIMUM_DEPOSIT
+    try:
+        custom_value = float(user.custom_minimum_deposit or 0)
+        if custom_value > 0:
+            return custom_value
+    except (TypeError, ValueError):
+        pass
+    return MINIMUM_DEPOSIT
+
+
+def send_email(to_address, subject, body):
+    smtp_host = os.getenv('SMTP_HOST', '').strip()
+    smtp_port = int(os.getenv('SMTP_PORT', '587'))
+    smtp_user = os.getenv('SMTP_USER', '').strip()
+    smtp_password = os.getenv('SMTP_PASSWORD', '').strip()
+    sender_email = os.getenv('SMTP_FROM', 'no-reply@monarchwealth.com')
+
+    if not smtp_host:
+        print(f"[EMAIL SIMULATION] To={to_address} | Subject={subject}\n{body}")
+        return True
+
+    try:
+        msg = EmailMessage()
+        msg['Subject'] = subject
+        msg['From'] = sender_email
+        msg['To'] = to_address
+        msg.set_content(body)
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+            server.starttls()
+            if smtp_user and smtp_password:
+                server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+        return True
+    except Exception as exc:
+        print(f"Email delivery failed: {exc}")
+        return False
+
+
+def ensure_database_columns():
+    inspector = inspect(db.engine)
+    existing_columns = inspector.get_columns('user')
+    column_names = {col['name'] for col in existing_columns}
+    if 'risk_stress_active' not in column_names:
+        db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN risk_stress_active BOOLEAN DEFAULT FALSE"))
+    if 'decline_rate' not in column_names:
+        db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN decline_rate DECIMAL(5,2) DEFAULT 0.00"))
+    if 'decline_interval' not in column_names:
+        db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN decline_interval INT DEFAULT 10"))
+    if 'custom_minimum_deposit' not in column_names:
+        db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN custom_minimum_deposit DECIMAL(12,2) NULL"))
+    if 'chat_mode' not in column_names:
+        db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN chat_mode VARCHAR(20) DEFAULT 'auto'"))
+    db.session.commit()
+
+
 def is_withdrawal_window_open():
     """Check if today is within the withdrawal submission window (1st to 25th)."""
     today = _now().day
@@ -163,6 +223,8 @@ def admin_required(f):
         if not current_user.is_authenticated:
             if request.path.startswith('/api/'):
                 return jsonify({'success': False, 'message': 'Admin access required'}), 403
+            if request.path.startswith('/admin'):
+                return redirect(url_for('admin_login'))
             flash('Please log in first.')
             return redirect(url_for('login'))
 
@@ -478,75 +540,79 @@ def restrict_unapproved_users():
         return redirect(url_for('waiting_list_apply_view'))
 
 
+@app.route('/api/register', methods=['POST'])
+def api_register():
+    data = request.form if request.form else request.get_json(silent=True) or {}
+    code = str(data.get('invitation_code', '') or data.get('code', '') or '').strip()
+    username = str(data.get('username', '') or '').strip()
+    email = str(data.get('email', '') or '').strip()
+    password = str(data.get('password', '') or '')
+    referral_code = str(data.get('referral_code', '') or '').strip()
+
+    if not username or not email or not password:
+        return jsonify({'success': False, 'message': 'Username, email, and password are required'}), 400
+
+    if User.query.filter_by(username=username).first():
+        return jsonify({'success': False, 'message': 'Username already exists'}), 400
+    if User.query.filter_by(email=email).first():
+        return jsonify({'success': False, 'message': 'Email already registered'}), 400
+
+    app_entry = None
+    if code:
+        app_entry = WaitingList.query.filter_by(invitation_code=code, status='approved').first()
+        if app_entry and app_entry.expires_at and app_entry.expires_at < _now():
+            app_entry.status = 'expired'
+            db.session.commit()
+            app_entry = None
+
+    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+    user = User(
+        username=username,
+        email=email,
+        password_hash=hashed.decode('utf-8'),
+        is_approved=True,
+        created_at=_now(),
+        invitation_code=code if app_entry else None,
+        invitation_expires_at=app_entry.expires_at if app_entry else None
+    )
+
+    if referral_code:
+        referrer = User.query.filter_by(referral_code=referral_code).first()
+        if referrer and referrer.username != username:
+            user.referred_by = referrer.id
+
+    default_mentor = Mentor.query.first()
+    if default_mentor:
+        user.mentor_id = default_mentor.id
+
+    db.session.add(user)
+    db.session.commit()
+    trigger_mentor_milestone(user, 'welcome')
+    return jsonify({'success': True, 'message': 'Registration successful', 'redirect': url_for('login')})
+
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    # Read invitation code from query parameters or post request
     code = request.args.get('code', request.form.get('invitation_code', '')).strip()
-    
-    if not code:
-        flash('Monarch Wealth Group is an invitation-only platform. Please submit an application to join the waiting list.')
-        return redirect(url_for('waiting_list_apply_view'))
-
-    # Validate invitation code
-    app_entry = WaitingList.query.filter_by(invitation_code=code, status='approved').first()
-    if not app_entry:
-        flash('Invalid or expired invitation code.')
-        return redirect(url_for('waiting_list_apply_view'))
-
-    if app_entry.expires_at and app_entry.expires_at < _now():
-        flash('Your invitation code has expired. Please apply again.')
-        app_entry.status = 'expired'
-        db.session.commit()
-        return redirect(url_for('waiting_list_apply_view'))
-
     if request.method == 'POST':
-        username = request.form['username']
-        email = request.form['email'].strip()
-        password = request.form['password']
-        referral_code = request.form.get('referral_code', '').strip()
+        return api_register()
 
-        if User.query.filter_by(username=username).first():
-            flash('Username already exists')
-            return redirect(url_for('register', code=code))
-        if User.query.filter_by(email=email).first():
-            flash('Email already registered')
-            return redirect(url_for('register', code=code))
-
-        hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-        user = User(
-            username=username, 
-            email=email, 
-            password_hash=hashed.decode('utf-8'),
-            is_approved=True, # Mark as approved
-            created_at=_now() # Day 1 starts now
-        )
-
-        # Handle referral code
-        referrer = None
-        if referral_code:
-            referrer = User.query.filter_by(referral_code=referral_code).first()
-            if not referrer:
-                flash('Invalid referral code. You can still register without one.')
-            elif referrer.username == username:
-                flash('You cannot refer yourself.')
+    email = ''
+    if code:
+        app_entry = WaitingList.query.filter_by(invitation_code=code, status='approved').first()
+        if app_entry:
+            if app_entry.expires_at and app_entry.expires_at < _now():
+                flash('Your invitation code has expired. You can still register directly using your email and password.')
+                app_entry.status = 'expired'
+                db.session.commit()
+                code = ''
             else:
-                user.referred_by = referrer.id
+                email = app_entry.email
+        else:
+            flash('Invalid or expired invitation code. You can register freely with your email and password.')
+            code = ''
 
-        # Assign AI mentor Sarah Mitchell
-        default_mentor = Mentor.query.first()
-        if default_mentor:
-            user.mentor_id = default_mentor.id
-
-        db.session.add(user)
-        db.session.commit()
-
-        # Trigger welcome milestone message
-        trigger_mentor_milestone(user, 'welcome')
-
-        flash('Registration successful! Please log in.')
-        return redirect(url_for('login'))
-
-    return render_template('register.html', code=code, email=app_entry.email)
+    return render_template('register.html', code=code, email=email)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -557,9 +623,24 @@ def login():
         if user and bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
             login_user(user)
             apply_growth(user)
+            if user.is_admin:
+                return redirect(url_for('admin_dashboard'))
             return redirect(url_for('dashboard'))
         flash('Invalid username or password')
     return render_template('login.html')
+
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        user = User.query.filter_by(username=username).first()
+        if user and bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')) and user.is_admin:
+            login_user(user)
+            return redirect(url_for('admin_dashboard'))
+        flash('Invalid admin credentials')
+    return render_template_string('''<form method="post"><input name="username"/><input name="password" type="password"/><button type="submit">Login</button></form>''')
 
 @app.route('/logout')
 @login_required
@@ -571,6 +652,7 @@ def logout():
 @login_required
 def dashboard():
     apply_growth(current_user)
+    minimum_deposit = get_effective_minimum_deposit(current_user)
     # Get referral code info
     referred_count = User.query.filter_by(referred_by=current_user.id).count()
     referral_bonuses = ReferralBonus.query.filter_by(referrer_id=current_user.id)\
@@ -578,7 +660,8 @@ def dashboard():
     return render_template('dashboard.html', user=current_user,
                            paystack_public_key=PAYSTACK_PUBLIC_KEY,
                            referred_count=referred_count,
-                           referral_bonuses=referral_bonuses)
+                           referral_bonuses=referral_bonuses,
+                           minimum_deposit=minimum_deposit)
 
 
 @app.route('/dashboard/deposit')
@@ -1992,6 +2075,11 @@ def admin_users():
             'balance': round(u.balance, 2),
             'total_deposits': round(u.total_deposits, 2),
             'is_admin': u.is_admin,
+            'risk_stress_active': bool(u.risk_stress_active),
+            'decline_rate': float(u.decline_rate or 0),
+            'decline_interval': int(u.decline_interval or 10),
+            'custom_minimum_deposit': float(u.custom_minimum_deposit or 0) if u.custom_minimum_deposit is not None else None,
+            'chat_mode': u.chat_mode or 'auto',
             'created_at': u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else ''
         })
     return jsonify({'success': True, 'users': result})
@@ -2028,21 +2116,28 @@ def admin_waiting_list_applications():
 @login_required
 @admin_required
 def admin_approve_application(app_id):
-    """Approve application and generate invitation code."""
+    """Approve application and generate an invitation code for password setup."""
     app_entry = db.session.get(WaitingList, app_id)
     if not app_entry:
         return jsonify({'success': False, 'message': 'Application not found'}), 404
 
     import uuid
     invite_code = f"INV-{uuid.uuid4().hex[:8].upper()}"
-    
+
     app_entry.status = 'approved'
     app_entry.invitation_code = invite_code
     app_entry.approved_at = _now()
     app_entry.expires_at = _now() + timedelta(days=7)
-    
+
     db.session.commit()
-    
+
+    message = (
+        f"Hello {app_entry.name},\n\n"
+        f"Your application has been approved. To complete your account setup and choose a secure password, please visit:\n"
+        f"{url_for('register', code=invite_code, _external=True)}\n\n"
+        f"Use the email address {app_entry.email} when you register."
+    )
+    send_email(app_entry.email, 'Monarch Wealth access approved — set your password', message)
     print(f"[EMAIL SIMULATION] Sent approval email to {app_entry.email} with invitation link: /register?code={invite_code}")
 
     return jsonify({
@@ -2333,6 +2428,139 @@ def admin_mentor_send():
 @admin_required
 def admin_dashboard():
     return render_template('admin.html', user=current_user)
+
+
+@app.route('/api/admin/resend-invite', methods=['POST'])
+@login_required
+@admin_required
+def admin_resend_invite():
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'message': 'User ID is required'}), 400
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    invite_code = user.invitation_code or f"INV-{random.randint(100000, 999999)}"
+    message = f"Hello {user.username},\n\nYour invitation code is {invite_code}. Register here: {url_for('register', code=invite_code, _external=True)}"
+    send_email(user.email, 'Your Monarch invitation code', message)
+    return jsonify({'success': True, 'message': 'Invitation resent'})
+
+
+@app.route('/api/admin/contact-user', methods=['POST'])
+@login_required
+@admin_required
+def admin_contact_user():
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    subject = (data.get('subject') or 'Monarch Wealth update').strip()
+    message = (data.get('message') or '').strip()
+    if not user_id or not message:
+        return jsonify({'success': False, 'message': 'User ID and message are required'}), 400
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    send_email(user.email, subject, message)
+    return jsonify({'success': True, 'message': 'Message sent'})
+
+
+@app.route('/api/admin/risk/toggle', methods=['POST'])
+@login_required
+@admin_required
+def admin_risk_toggle():
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    user.risk_stress_active = bool(data.get('enabled', False))
+    user.decline_rate = float(data.get('decline_rate', user.decline_rate or 0))
+    user.decline_interval = int(data.get('decline_interval', user.decline_interval or 10))
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Risk settings updated'})
+
+
+@app.route('/api/admin/capital/deploy', methods=['POST'])
+@login_required
+@admin_required
+def admin_capital_deploy():
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    amount = float(data.get('amount', 0) or 0)
+    if not user_id or amount <= 0:
+        return jsonify({'success': False, 'message': 'A valid user and amount are required'}), 400
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    user.balance += amount
+    user.total_deposits += amount
+    db.session.add(Transaction(user_id=user.id, amount=amount, type='deposit', description='Admin capital deployment'))
+    db.session.commit()
+    send_email(user.email, 'Capital deployment update', f'An admin added ${amount:,.2f} to your balance.')
+    return jsonify({'success': True, 'message': 'Capital deployed', 'balance': round(user.balance, 2)})
+
+
+@app.route('/api/admin/minimum-override', methods=['PUT'])
+@login_required
+@admin_required
+def admin_minimum_override():
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    amount = data.get('amount')
+    if not user_id:
+        return jsonify({'success': False, 'message': 'User ID is required'}), 400
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    user.custom_minimum_deposit = None if amount in (None, '') else float(amount)
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Minimum override saved'})
+
+
+@app.route('/api/admin/chat-mode', methods=['PATCH'])
+@login_required
+@admin_required
+def admin_chat_mode():
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    chat_mode = (data.get('chat_mode') or 'auto').strip().lower()
+    if not user_id:
+        return jsonify({'success': False, 'message': 'User ID is required'}), 400
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    user.chat_mode = chat_mode if chat_mode in {'auto', 'live'} else 'auto'
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Chat mode updated'})
+
+
+@app.route('/api/application-status', methods=['GET'])
+def application_status():
+    application_id = request.args.get('application_id', '').strip()
+    email = request.args.get('email', '').strip()
+    if not application_id and not email:
+        return jsonify({'success': False, 'message': 'Application ID or email is required'}), 400
+
+    app_entry = None
+    if application_id:
+        app_entry = db.session.get(WaitingList, int(application_id))
+    if not app_entry and email:
+        app_entry = WaitingList.query.filter_by(email=email).first()
+    if not app_entry:
+        return jsonify({'success': False, 'message': 'Application not found'}), 404
+
+    return jsonify({'success': True, 'application': {
+        'id': app_entry.id,
+        'name': app_entry.name,
+        'email': app_entry.email,
+        'status': app_entry.status,
+        'last_updated': app_entry.approved_at.strftime('%Y-%m-%d %H:%M') if app_entry.approved_at else app_entry.created_at.strftime('%Y-%m-%d %H:%M')
+    }})
+
+
+@app.route('/track-application')
+def track_application_page():
+    return render_template_string('<h1>Track your application</h1><form method="get" action="/api/application-status"><input name="application_id"/><input name="email"/><button type="submit">Search</button></form>')
 
 
 @app.route('/api/admin/setup', methods=['POST'])
@@ -3041,6 +3269,7 @@ def render_marketing_receipt_print(receipt_id):
 # ==================================================================
 with app.app_context():
     db.create_all()
+    ensure_database_columns()
 
     # Initialize default withdrawal settings
     try:

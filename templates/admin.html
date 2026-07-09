@@ -417,10 +417,11 @@
                                 <th>Deposits</th>
                                 <th>Joined</th>
                                 <th>Status</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="membersTableBody">
-                            <tr><td colspan="6" class="loading">Loading members…</td></tr>
+                            <tr><td colspan="7" class="loading">Loading members…</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -592,6 +593,59 @@
     </div>
 
 </div>
+
+    <div id="memberActionModal" class="admin-modal" style="display:none;">
+        <div class="modal-content" style="max-width: 620px;">
+            <h3 style="color: var(--gold); border-bottom: 1px solid var(--border); padding-bottom: 0.8rem; margin-bottom: 1.2rem;">Member Controls</h3>
+            <input type="hidden" id="memberActionUserId">
+            <div class="form-group">
+                <label for="memberActionSubject">Subject</label>
+                <input type="text" id="memberActionSubject" class="admin-input" value="Monarch Wealth update">
+            </div>
+            <div class="form-group">
+                <label for="memberActionMessage">Message</label>
+                <textarea id="memberActionMessage" class="admin-input" rows="4" placeholder="Type a note or instruction for the member"></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="memberActionMinimum">Custom Minimum</label>
+                    <input type="number" id="memberActionMinimum" class="admin-input" step="0.01" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="memberActionChatMode">Chat Mode</label>
+                    <select id="memberActionChatMode" class="admin-input">
+                        <option value="auto">Automated</option>
+                        <option value="live">Live</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="memberActionStress">Stress Test</label>
+                    <select id="memberActionStress" class="admin-input">
+                        <option value="false">Disabled</option>
+                        <option value="true">Enabled</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="memberActionDeclineRate">Decline Rate (%)</label>
+                    <input type="number" id="memberActionDeclineRate" class="admin-input" step="0.01" min="0" max="100" value="0">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="memberActionInterval">Interval (seconds)</label>
+                <input type="number" id="memberActionInterval" class="admin-input" step="1" min="5" value="10">
+            </div>
+            <div class="form-group">
+                <label for="memberActionCapital">Deploy Capital</label>
+                <input type="number" id="memberActionCapital" class="admin-input" step="0.01" min="0" value="0">
+            </div>
+            <div class="modal-actions">
+                <button type="button" onclick="closeMemberActionModal()" class="btn-ghost">Cancel</button>
+                <button type="button" onclick="saveMemberActionOverrides()" class="btn-gold">Save Changes</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Approve Application Modal -->
     <div id="approveAppModal" class="admin-modal" style="display:none;">

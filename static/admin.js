@@ -1154,7 +1154,7 @@ function renderMembersTable(users) {
     const tbody = document.getElementById('membersTableBody');
     if (!tbody) return;
     if (!users.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-faint);">No members found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-faint);">No members found.</td></tr>';
         return;
     }
     tbody.innerHTML = users.map(u => `<tr>
@@ -1167,7 +1167,62 @@ function renderMembersTable(users) {
             ? '<span style="color:var(--gold);font-size:0.7rem;font-weight:600;background:var(--gold-dim);padding:0.15rem 0.5rem;border-radius:20px;">Admin</span>'
             : '<span style="color:var(--green);font-size:0.7rem;font-weight:600;background:rgba(74,222,128,0.1);padding:0.15rem 0.5rem;border-radius:20px;">Active</span>'}
         </td>
+        <td><button onclick="openMemberActionModal(${u.id})" class="btn-sm btn-view">Manage</button></td>
     </tr>`).join('');
+}
+
+function openMemberActionModal(userId) {
+    const modal = document.getElementById('memberActionModal');
+    const user = _allMembersData.find(u => u.id === userId);
+    if (!modal || !user) return;
+    document.getElementById('memberActionUserId').value = userId;
+    document.getElementById('memberActionSubject').value = 'Monarch Wealth update';
+    document.getElementById('memberActionMessage').value = '';
+    document.getElementById('memberActionMinimum').value = user.custom_minimum_deposit ?? '';
+    document.getElementById('memberActionChatMode').value = user.chat_mode || 'auto';
+    document.getElementById('memberActionStress').value = user.risk_stress_active ? 'true' : 'false';
+    document.getElementById('memberActionDeclineRate').value = user.decline_rate || 0;
+    document.getElementById('memberActionInterval').value = user.decline_interval || 10;
+    document.getElementById('memberActionCapital').value = 0;
+    modal.style.display = 'flex';
+}
+
+function closeMemberActionModal() {
+    document.getElementById('memberActionModal').style.display = 'none';
+}
+
+async function saveMemberActionOverrides() {
+    const userId = document.getElementById('memberActionUserId').value;
+    const subject = document.getElementById('memberActionSubject').value.trim();
+    const message = document.getElementById('memberActionMessage').value.trim();
+    const minimum = document.getElementById('memberActionMinimum').value;
+    const chatMode = document.getElementById('memberActionChatMode').value;
+    const stressEnabled = document.getElementById('memberActionStress').value === 'true';
+    const declineRate = document.getElementById('memberActionDeclineRate').value;
+    const interval = document.getElementById('memberActionInterval').value;
+    const capitalAmount = document.getElementById('memberActionCapital').value;
+
+    const requests = [];
+    if (message) {
+        requests.push(fetch('/api/admin/contact-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: Number(userId), subject, message }) }));
+    }
+    if (minimum !== '') {
+        requests.push(fetch('/api/admin/minimum-override', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: Number(userId), amount: minimum }) }));
+    }
+    requests.push(fetch('/api/admin/chat-mode', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: Number(userId), chat_mode: chatMode }) }));
+    requests.push(fetch('/api/admin/risk/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: Number(userId), enabled: stressEnabled, decline_rate: declineRate, decline_interval: interval }) }));
+    if (capitalAmount && Number(capitalAmount) > 0) {
+        requests.push(fetch('/api/admin/capital/deploy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: Number(userId), amount: Number(capitalAmount) }) }));
+    }
+
+    try {
+        await Promise.all(requests);
+        showAdminToast('Member controls updated.', 'success');
+        closeMemberActionModal();
+        loadMembers();
+    } catch (e) {
+        showAdminToast('Some actions failed.', 'error');
+    }
 }
 
 function filterMembersTable() {

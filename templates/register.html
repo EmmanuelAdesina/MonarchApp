@@ -10,7 +10,7 @@
             <div style="font-size: 1.5rem; font-weight: 600; font-family: Georgia, serif; color: var(--text); margin-bottom: 0.5rem;">
                 Monarch<span style="color: var(--gold);">Wealth</span>
             </div>
-            <p style="color: var(--text-dim); font-size: 0.85rem;">Create your private wealth account</p>
+            <p style="color: var(--text-dim); font-size: 0.85rem;">Create your Monarch account with email, username, and password.</p>
         </div>
 
         {% with messages = get_flashed_messages() %}
@@ -23,7 +23,7 @@
             {% endif %}
         {% endwith %}
 
-        <form action="{{ url_for('register') }}" method="POST" style="display: flex; flex-direction: column; gap: 1.2rem;">
+        <form id="registerForm" style="display: flex; flex-direction: column; gap: 1.2rem;">
             <div>
                 <label for="username" style="display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); margin-bottom: 0.5rem;">Username</label>
                 <input type="text" id="username" name="username" required 
@@ -36,6 +36,9 @@
                 <input type="email" id="email" name="email" required 
                     style="width: 100%; padding: 0.8rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.3s;"
                     onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border)'">
+                <p style="margin-top:0.6rem;font-size:0.8rem;color:var(--text-faint);">
+                    Register using any email and password. The application form is separate.
+                </p>
             </div>
 
             <div>
@@ -54,7 +57,9 @@
                     onfocus="this.style.borderColor='var(--gold)'" onblur="this.style.borderColor='var(--border)'">
             </div>
 
-            <button type="submit" 
+            <input type="hidden" id="invitation_code" name="invitation_code" value="{{ code }}">
+
+            <button type="submit" id="registerButton"
                 style="margin-top: 0.5rem; width: 100%; padding: 0.9rem; background: var(--gold); color: var(--bg); border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.3s;"
                 onmouseover="this.style.background='#d4b76a'; this.style.boxShadow='0 4px 12px rgba(201, 168, 76, 0.2)'"
                 onmouseout="this.style.background='var(--gold)'; this.style.boxShadow='none'">
@@ -72,4 +77,38 @@
 
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('registerForm')?.addEventListener('submit', async function(event) {
+    event.preventDefault();
+    const button = document.getElementById('registerButton');
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const payload = Object.fromEntries(data.entries());
+
+    button.disabled = true;
+    button.textContent = 'Creating account...';
+
+    try {
+        const response = await fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            alert(result.message || 'Registration failed');
+        } else {
+            window.location.href = result.redirect || '/login';
+        }
+    } catch (error) {
+        alert('Registration failed. Please try again.');
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Get Started';
+    }
+});
+</script>
 {% endblock %}

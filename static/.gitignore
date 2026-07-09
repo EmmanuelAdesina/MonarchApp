@@ -1,0 +1,271 @@
+.venv*
+venv*
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+*.pyo
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+*.log
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# Flask-Migrate
+migrations/versions/*.py
+!migrations/versions/__init__.py
+migrations/README
+
+# Flask-SQLAlchemy
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.iml
+.project
+.pydevproject
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# Backup files
+*.bak
+*.tmp
+*.temp
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+Dockerfile.local
+
+# Pytest
+.pytest_cache/
+
+# Mypy
+.mypy_cache/
+.dmypy.json
+
+# Pyre
+.pyre/
+
+# Ruff
+.ruff_cache/
+
+# Black
+.black_cache/
+
+# Test results
+test-reports/
+junit.xml
+
+# Secret files
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+
+# SQL dumps
+*.sql
+*.dump
+
+# Database credentials
+db_config.py
+database.ini
+credentials.ini
+
+# Application specific
+uploads/
+static/uploads/
+media/
+temp/
+tmp/
+data/
+*.json
+!package.json
+!tsconfig.json
+!launch.json
+config.local.py
+
+# Flask session files
+flask_session/
+
+# Sentry
+.sentry-native/
+
+# Certificates
+certificates/
+
+# Gunicorn
+gunicorn.log
+gunicorn.pid
+
+# Nginx
+nginx.conf
+*.log
+
+# Supervisor
+supervisor.log
+*.pid
+
+# Mailgun logs
+mailgun.log
+
+# Redis
+dump.rdb
+
+# Elasticsearch
+elasticsearch/

@@ -13,6 +13,11 @@
 </head>
 <body>
     {% block content %}{% endblock %}
+    <nav class="mobile-bottom-nav" aria-label="Mobile quick navigation">
+        <a href="{{ url_for('index') }}">Home</a>
+        <a href="{{ url_for('login') }}">Login</a>
+        <a href="{{ url_for('register') }}">Register</a>
+    </nav>
     {% block scripts %}{% endblock %}
 </body>
 </html>

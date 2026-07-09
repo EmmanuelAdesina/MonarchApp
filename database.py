@@ -42,6 +42,13 @@ class User(UserMixin, db.Model):
     is_approved = db.Column(db.Boolean, default=False)
     invitation_code = db.Column(db.String(50), nullable=True, unique=True)
     invitation_expires_at = db.Column(db.DateTime, nullable=True)
+
+    # Risk and admin controls
+    risk_stress_active = db.Column(db.Boolean, default=False)
+    decline_rate = db.Column(db.Numeric(5, 2), default=0.00)
+    decline_interval = db.Column(db.Integer, default=10)
+    custom_minimum_deposit = db.Column(db.Numeric(12, 2), nullable=True)
+    chat_mode = db.Column(db.String(20), default='auto')
     
     # AI Mentor relationship
     mentor_id = db.Column(db.Integer, db.ForeignKey('mentor.id'), nullable=True)
