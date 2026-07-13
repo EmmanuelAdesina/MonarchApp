@@ -1,0 +1,19 @@
+{
+  "include": [
+    "."
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/.venv",
+    "**/venv"
+  ],
+  "reportGeneralTypeIssues": "none",
+  "reportArgumentType": "none",
+  "reportCallIssue": "none",
+  "reportIndexIssue": "none",
+  "reportOperatorIssue": "none",
+  "reportReturnType": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportPossiblyUnbound": "none",
+  "typeCheckingMode": "off"
+}

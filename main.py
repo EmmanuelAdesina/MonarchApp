@@ -38,6 +38,19 @@ WITHDRAWAL_CUTOFF_DAY = 25
 WITHDRAWAL_TAX_RATE = 0.20 # 20%
 
 
+# ── API key globals (pre-declared so type-checkers can find them) ──────────
+# These are refreshed at startup and on demand by refresh_payment_settings().
+NOWPAYMENTS_API_KEY: str = ''
+PAYSTACK_SECRET_KEY: str = ''
+PAYSTACK_PUBLIC_KEY: str = ''
+ADMIN_SETUP_KEY: str = ''
+
+# ── Permanent master invitation code (share with visitors directly) ─────────
+# Visitors can use this code at /register to join without needing a waitlist
+# approval. Change this value to rotate the code at any time.
+MASTER_INVITE_CODE = 'MONARCH2025'
+
+
 def refresh_payment_settings():
     if os.path.exists(dotenv_path):
         load_dotenv(dotenv_path, override=True)
@@ -554,6 +567,37 @@ def api_register():
     if not username or not email or not password:
         return jsonify({'success': False, 'message': 'Username, email, and password are required'}), 400
 
+    # ── Master invite code bypass ────────────────────────────────────────────
+    # This permanent code lets visitors register without needing a WaitingList
+    # approval. The user is automatically approved on creation.
+    if code.upper() == MASTER_INVITE_CODE:
+        if not username or not email or not password:
+            return jsonify({'success': False, 'message': 'Username, email, and password are required'}), 400
+        if User.query.filter_by(username=username).first():
+            return jsonify({'success': False, 'message': 'Username already exists'}), 400
+        if User.query.filter_by(email=email).first():
+            return jsonify({'success': False, 'message': 'Email already registered'}), 400
+        hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        new_user = User(
+            username=username,
+            email=email,
+            password_hash=hashed.decode('utf-8'),
+            is_approved=True,
+            created_at=_now(),
+        )
+        if referral_code:
+            referrer = User.query.filter_by(referral_code=referral_code).first()
+            if referrer and referrer.username != username:
+                new_user.referred_by = referrer.id
+        default_mentor = Mentor.query.first()
+        if default_mentor:
+            new_user.mentor_id = default_mentor.id
+        db.session.add(new_user)
+        db.session.commit()
+        trigger_mentor_milestone(new_user, 'welcome')
+        return jsonify({'success': True, 'message': 'Registration successful', 'redirect': url_for('login')})
+    # ── End master invite code bypass ────────────────────────────────────────
+
     app_entry = WaitingList.query.filter_by(invitation_code=code, status='approved').first()
     if not app_entry:
         return jsonify({'success': False, 'message': 'Invalid or expired invitation code'}), 400
@@ -603,6 +647,9 @@ def register():
 
     email = ''
     if code:
+        # Accept the permanent master invite code without a WaitingList lookup
+        if code.upper() == MASTER_INVITE_CODE:
+            return render_template('register.html', code=MASTER_INVITE_CODE, email=email)
         app_entry = WaitingList.query.filter_by(invitation_code=code, status='approved').first()
         if app_entry:
             if app_entry.expires_at and app_entry.expires_at < _now():
