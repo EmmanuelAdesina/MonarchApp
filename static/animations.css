@@ -5,7 +5,7 @@
 
 /* ── Live Member Counter ── */
 @keyframes updateFlash {
-    0% { background-color: rgba(200, 168, 94, 0.2); }
+    0% { background-color: rgba(79, 70, 229, 0.18); }
     100% { background-color: transparent; }
 }
 .counter-flash {
@@ -20,17 +20,17 @@
 
 /* ── Pulse / Glow Rings ── */
 @keyframes pulse-ring {
-    0% { box-shadow: 0 0 0 0 rgba(200, 168, 94, 0.4); }
-    70% { box-shadow: 0 0 0 15px rgba(200, 168, 94, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(200, 168, 94, 0); }
+    0% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.5); }
+    70% { box-shadow: 0 0 0 18px rgba(79, 70, 229, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0); }
 }
 .pulse-ring {
     animation: pulse-ring 2s infinite;
 }
 
 @keyframes glow-pulse {
-    0%, 100% { opacity: 0.6; text-shadow: 0 0 4px rgba(200, 168, 94, 0.3); }
-    50% { opacity: 1; text-shadow: 0 0 12px rgba(200, 168, 94, 0.6); }
+    0%, 100% { opacity: 0.7; text-shadow: 0 0 6px rgba(79, 70, 229, 0.35); }
+    50% { opacity: 1; text-shadow: 0 0 18px rgba(79, 70, 229, 0.75); }
 }
 .glow-pulse {
     animation: glow-pulse 3s ease-in-out infinite;
@@ -79,7 +79,7 @@
     position: absolute;
     width: 3px;
     height: 3px;
-    background: rgba(200, 168, 94, 0.6);
+    background: rgba(79, 70, 229, 0.55);
     border-radius: 50%;
     pointer-events: none;
 }

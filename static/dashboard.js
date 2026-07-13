@@ -39,12 +39,12 @@ function generateChart(periodDays = 30, initialBalance = balance) {
     svg.innerHTML = `
         <defs>
             <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stop-color="rgba(200,168,94,0.35)" />
-                <stop offset="100%" stop-color="rgba(10,13,26,0.04)" />
+                <stop offset="0%" stop-color="rgba(126,139,155,0.35)" />
+                <stop offset="100%" stop-color="rgba(244,246,248,0.04)" />
             </linearGradient>
         </defs>
         <path d="${areaPath}" fill="url(#chartGradient)" opacity="0.85"></path>
-        <polyline points="${pathPoints}" fill="none" stroke="#C8A85E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="${pathPoints}" fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
         <circle cx="${pathPoints.split(' ').slice(-1)[0].split(',')[0]}" cy="${pathPoints.split(' ').slice(-1)[0].split(',')[1]}" r="4" fill="#4ADE80" stroke="#FFFFFF" stroke-width="2" />
     `;
 
@@ -1154,7 +1154,7 @@ async function loadChatMessages() {
             const bubble = document.createElement('div');
             bubble.style.cssText = `display:flex; flex-direction:column; align-items:${isUser ? 'flex-end' : 'flex-start'}; gap:0.2rem;`;
             bubble.innerHTML = `
-                <div style="max-width:80%; padding:0.65rem 0.9rem; border-radius:${isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px'}; background:${isUser ? 'var(--gold)' : 'rgba(255,255,255,0.07)'}; color:${isUser ? 'var(--bg)' : 'var(--text)'}; font-size:0.82rem; line-height:1.45;">${escapeHtml(msg.message)}</div>
+                <div style="max-width:80%; padding:0.65rem 0.9rem; border-radius:${isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px'}; background:${isUser ? 'var(--gold)' : 'var(--bg-secondary)'}; color:${isUser ? '#FFFFFF' : 'var(--text)'}; font-size:0.82rem; line-height:1.45;">${escapeHtml(msg.message)}</div>
                 <div style="font-size:0.6rem; color:var(--text-faint); padding:0 0.3rem;">${msg.created_at}</div>
             `;
             container.appendChild(bubble);
@@ -1178,7 +1178,7 @@ async function sendChatMessage() {
     const container = document.getElementById('chatMessages');
     const userBubble = document.createElement('div');
     userBubble.style.cssText = 'display:flex; flex-direction:column; align-items:flex-end; gap:0.2rem;';
-    userBubble.innerHTML = `<div style="max-width:80%; padding:0.65rem 0.9rem; border-radius:14px 14px 4px 14px; background:var(--gold); color:var(--bg); font-size:0.82rem; line-height:1.45;">${escapeHtml(message)}</div>`;
+    userBubble.innerHTML = `<div style="max-width:80%; padding:0.65rem 0.9rem; border-radius:14px 14px 4px 14px; background:var(--gold); color:#FFFFFF; font-size:0.82rem; line-height:1.45;">${escapeHtml(message)}</div>`;
     container.appendChild(userBubble);
     container.scrollTop = container.scrollHeight;
 
@@ -1186,7 +1186,7 @@ async function sendChatMessage() {
     const typing = document.createElement('div');
     typing.id = 'typingIndicator';
     typing.style.cssText = 'display:flex; align-items:flex-start; gap:0.2rem;';
-    typing.innerHTML = '<div style="padding:0.65rem 0.9rem; border-radius:14px 14px 14px 4px; background:rgba(255,255,255,0.07); color:var(--text-dim); font-size:0.82rem;">Sarah is typing…</div>';
+    typing.innerHTML = '<div style="padding:0.65rem 0.9rem; border-radius:14px 14px 14px 4px; background:var(--bg-secondary); color:var(--text-dim); font-size:0.82rem;">Sarah is typing…</div>';
     container.appendChild(typing);
     container.scrollTop = container.scrollHeight;
 

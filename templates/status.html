@@ -7,16 +7,16 @@
     <!-- Canvas for particle background -->
     <canvas id="status-particles" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;"></canvas>
 
-    <div style="background: rgba(17, 24, 39, 0.75); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 3rem 2.5rem; border-radius: 20px; border: 1px solid var(--border-gold); max-width: 500px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.6); z-index: 2; position: relative;">
+    <div style="background: var(--bg-card); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 3rem 2.5rem; border-radius: 20px; border: 1px solid var(--border-primary); max-width: 500px; width: 100%; box-shadow: var(--shadow-lg); z-index: 2; position: relative;">
         
         <!-- Crest -->
         <div style="text-align: center; margin-bottom: 2rem;">
             <div style="display: inline-block; margin-bottom: 1rem;">
                 <svg width="45" height="45" viewBox="0 0 28 28" fill="none">
-                    <rect x="2" y="12" width="24" height="4" rx="1" fill="#C8A85E"/>
-                    <path d="M4 16 L14 4 L24 16" stroke="#C8A85E" stroke-width="2" stroke-linejoin="round"/>
-                    <path d="M8 20 L14 10 L20 20" stroke="#C8A85E" stroke-width="1.5" stroke-linejoin="round"/>
-                    <circle cx="14" cy="8" r="2" fill="#C8A85E"/>
+                    <rect x="2" y="12" width="24" height="4" rx="1" fill="var(--gold)"/>
+                    <path d="M4 16 L14 4 L24 16" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round"/>
+                    <path d="M8 20 L14 10 L20 20" stroke="var(--gold)" stroke-width="1.5" stroke-linejoin="round"/>
+                    <circle cx="14" cy="8" r="2" fill="var(--gold)"/>
                 </svg>
             </div>
             <div style="font-size: 1.6rem; font-weight: 600; font-family: 'Playfair Display', Georgia, serif; color: var(--text); margin-bottom: 0.2rem;">
@@ -45,7 +45,7 @@
         <!-- ========================================== -->
         {% if application.status == 'pending' %}
         <div style="text-align: center; padding: 2rem 1rem;">
-            <div class="spinner" style="width: 50px; height: 50px; border: 3px solid rgba(200, 168, 94, 0.1); border-top-color: var(--gold); border-radius: 50%; display: inline-block; animation: spin 1s linear infinite; margin-bottom: 1.5rem;"></div>
+            <div class="spinner" style="width: 50px; height: 50px; border: 3px solid rgba(126, 139, 155, 0.1); border-top-color: var(--gold); border-radius: 50%; display: inline-block; animation: spin 1s linear infinite; margin-bottom: 1.5rem;"></div>
             <h3 style="font-family: Georgia, serif; color: var(--text); margin-bottom: 0.8rem; font-size: 1.25rem;">Application Under Review</h3>
             <p style="color: var(--text-dim); font-size: 0.85rem; line-height: 1.5;">
                 Our private wealth selectors are currently reviewing your strategy statement. Reviews are typically resolved in 1-2 business hours.
@@ -67,7 +67,7 @@
             </p>
 
             <!-- Invitation Code Card -->
-            <div style="background: rgba(200, 168, 94, 0.08); border: 1px dashed var(--gold); border-radius: 12px; padding: 1.2rem; margin-bottom: 1.5rem; position: relative;">
+            <div style="background: rgba(126, 139, 155, 0.08); border: 1px dashed var(--gold); border-radius: 12px; padding: 1.2rem; margin-bottom: 1.5rem; position: relative;">
                 <div style="font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 0.5rem;">Your Invitation Code</div>
                 <div style="font-family: monospace; font-size: 1.4rem; font-weight: bold; color: var(--gold); letter-spacing: 2px;" id="invite-code-text">{{ application.invitation_code }}</div>
             </div>

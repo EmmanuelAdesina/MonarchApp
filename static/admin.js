@@ -1240,11 +1240,11 @@ function showAdminToast(msg, type = 'info') {
     if (!toast) {
         toast = document.createElement('div');
         toast.id = 'adminToast';
-        toast.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;padding:0.8rem 1.2rem;border-radius:8px;font-size:0.82rem;font-weight:600;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.4);transition:all 0.3s ease;';
+        toast.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;padding:0.8rem 1.2rem;border-radius:8px;font-size:0.82rem;font-weight:600;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.1);transition:all 0.3s ease;';
         document.body.appendChild(toast);
     }
-    const colors = { success: '#4ADE80', error: '#EF4444', info: '#C8A85E' };
-    toast.style.background = '#141926';
+    const colors = { success: '#10B981', error: '#EF4444', info: '#4F46E5' };
+    toast.style.background = 'var(--bg-elev)';
     toast.style.border = `1px solid ${colors[type] || colors.info}`;
     toast.style.color = colors[type] || colors.info;
     toast.textContent = msg;

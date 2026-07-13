@@ -5,47 +5,47 @@
    ================================================================== */
 
 :root {
-  /* Core palette */
-  --bg-primary: #070B14;
-  --bg-secondary: #0C1220;
-  --bg-card: #111827;
-  --bg-elevated: #1A2235;
-  --bg-hover: rgba(255, 255, 255, 0.03);
+  /* Core palette - White & Silver premium */
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F4F6F8;
+  --bg-card: #FFFFFF;
+  --bg-elevated: #F8F9FA;
+  --bg-hover: rgba(0, 0, 0, 0.04);
   
-  /* Gold accents */
-  --gold: #C8A85E;
-  --gold-light: #E2C884;
-  --gold-dark: #A68B4B;
-  --gold-dim: rgba(200, 168, 94, 0.12);
-  --gold-glow: rgba(200, 168, 94, 0.06);
+  /* Vibrant Indigo-Blue accents (pops on white) */
+  --gold: #4F46E5;
+  --gold-light: #818CF8;
+  --gold-dark: #3730A3;
+  --gold-dim: rgba(79, 70, 229, 0.10);
+  --gold-glow: rgba(79, 70, 229, 0.18);
   
-  /* Text */
-  --text-primary: #F1EDE6;
-  --text-secondary: #A9A096;
-  --text-tertiary: #6B645C;
-  --text-muted: #4A453E;
+  /* Text — stronger contrast hierarchy */
+  --text-primary: #0F172A;
+  --text-secondary: #334155;
+  --text-tertiary: #64748B;
+  --text-muted: #94A3B8;
   
   /* Semantic */
-  --green: #4ADE80;
-  --green-dim: rgba(74, 222, 128, 0.1);
+  --green: #10B981;
+  --green-dim: rgba(16, 185, 129, 0.1);
   --red: #EF4444;
   --red-dim: rgba(239, 68, 68, 0.1);
   --amber: #F59E0B;
   --amber-dim: rgba(245, 158, 11, 0.1);
-  --blue: #60A5FA;
-  --blue-dim: rgba(96, 165, 250, 0.1);
+  --blue: #3B82F6;
+  --blue-dim: rgba(59, 130, 246, 0.1);
   
-  /* Borders */
-  --border-primary: rgba(255, 255, 255, 0.06);
-  --border-secondary: rgba(255, 255, 255, 0.04);
-  --border-gold: rgba(200, 168, 94, 0.15);
-  --border-gold-strong: rgba(200, 168, 94, 0.3);
+  /* Borders - Clean Frames style */
+  --border-primary: #E2E8F0;
+  --border-secondary: #EDF2F7;
+  --border-gold: #C7D2FE;
+  --border-gold-strong: #818CF8;
   
-  /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
-  --shadow-gold: 0 4px 20px rgba(200, 168, 94, 0.12);
+  /* Shadows - Elevated with accent glow */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.10), 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.10), 0 4px 10px rgba(0, 0, 0, 0.05);
+  --shadow-gold: 0 4px 20px rgba(79, 70, 229, 0.30);
   
   /* Layout */
   --sidebar-width: 260px;
@@ -60,6 +60,14 @@
   --font-serif: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Layout aliases for template compatibility */
+  --bg: var(--bg-secondary);
+  --bg-elev: var(--bg-card);
+  --text: var(--text-primary);
+  --text-dim: var(--text-secondary);
+  --text-faint: var(--text-tertiary);
+  --border: var(--border-primary);
 }
 
 /* ==================================================================
@@ -833,7 +841,7 @@ th {
   text-transform: uppercase;
   letter-spacing: 1px;
   color: var(--text-tertiary);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-primary);
   font-weight: 600;
   white-space: nowrap;
@@ -897,7 +905,7 @@ tr:hover td {
 }
 
 .badge-neutral {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.04);
   color: var(--text-tertiary);
 }
 
@@ -907,7 +915,7 @@ tr:hover td {
 
 .progress-bar {
   height: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.06);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -1202,12 +1210,12 @@ tr:hover td {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.08);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.15);
 }
 
 /* ==================================================================
@@ -2429,10 +2437,42 @@ tr:hover td {
     gap: 0.6rem;
   }
 
-  .portfolio-card {
-    padding: 1rem;
-  }
-
   .card-icon { font-size: 1.5rem; }
   .card-company { font-size: 0.9rem; }
 }
+
+/* ================================================================
+   GLOBAL BUTTON POLISH — Glowing, Popping Buttons
+   ================================================================ */
+
+/* Primary / Gold buttons — vivid indigo gradient with glow */
+[style*="background:var(--gold)"],
+[style*="background: var(--gold)"],
+.btn-gold {
+  background: linear-gradient(135deg, var(--gold) 0%, var(--gold-dark) 100%) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 4px 15px rgba(79, 70, 229, 0.40), 0 1px 3px rgba(0,0,0,0.15) !important;
+  border: none !important;
+  letter-spacing: 0.3px;
+}
+
+[style*="background:var(--gold)"]:hover,
+[style*="background: var(--gold)"]:hover,
+.btn-gold:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--gold-light) 0%, var(--gold) 100%) !important;
+  box-shadow: 0 6px 24px rgba(79, 70, 229, 0.55), 0 2px 6px rgba(0,0,0,0.12) !important;
+  transform: translateY(-1px);
+}
+
+/* Green confirm buttons */
+[style*="background:var(--green)"],
+[style*="background: var(--green)"] {
+  color: #FFFFFF !important;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.40) !important;
+}
+
+/* Generic inline buttons using var colors need white text */
+button, .btn {
+  --bg: #FFFFFF;
+}
+

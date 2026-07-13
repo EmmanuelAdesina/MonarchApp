@@ -1,0 +1,64 @@
+/* Mobile and header auth styles */
+.site-header {
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-primary);
+  position: sticky;
+  top: 0;
+  z-index: 120;
+}
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0.65rem 1rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.brand {
+  font-family: var(--font-serif);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 1.05rem;
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.brand-accent { color: var(--gold); font-weight: 500; }
+.mobile-menu-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  padding: 6px;
+}
+.main-nav { display: flex; gap: 1rem; align-items: center; }
+.main-nav a { color: var(--text-secondary); font-weight:600; font-size:0.95rem; }
+.auth-actions { display: flex; gap: 0.6rem; align-items: center; }
+.auth-actions .auth-login { padding: 0.45rem 0.9rem; border-radius: 999px; }
+.auth-actions .auth-register { padding: 0.55rem 1.1rem; border-radius: 999px; }
+
+/* Mobile drawer */
+.mobile-drawer { display: none; flex-direction: column; gap: 0.6rem; padding: 1rem; border-top: 1px solid var(--border-primary); background: var(--bg-primary); }
+.mobile-drawer a { text-align: left; }
+
+/* Responsive rules */
+@media (max-width: 880px) {
+  .main-nav { display: none; }
+  .mobile-menu-toggle { display: inline-flex; }
+  .auth-actions { display: none; }
+  .mobile-bottom-nav { display: flex; }
+  .mobile-drawer { display: none; }
+  body.mobile-menu-open .mobile-drawer { display: flex; }
+  body.mobile-menu-open { overflow: hidden; }
+  .mobile-drawer .btn { width: 100%; }
+  .mobile-drawer .btn-lg { padding: 0.85rem 1rem; font-size: 1rem; border-radius: 12px; }
+}
+
+/* Emphasize tappable targets */
+@media (max-width: 480px) {
+  .auth-actions .auth-register { padding: 0.9rem 1rem; font-size: 1rem; }
+  .auth-actions .auth-login { padding: 0.75rem 0.9rem; font-size: 0.95rem; }
+  .mobile-bottom-nav a { min-height: 50px; min-width: 50px; padding: 0.6rem 1rem; font-size: 1rem; }
+}

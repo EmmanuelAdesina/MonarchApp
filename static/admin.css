@@ -1,17 +1,17 @@
 /* ---- Admin Dashboard Styling ---- */
 
 :root {
-    --bg: #0A0D1A;
-    --bg-elev: #111827;
-    --bg-card: #141926;
-    --text: #E8E2D9;
-    --text-dim: #9A9185;
-    --text-faint: #5C564D;
-    --gold: #C8A85E;
-    --gold-dim: rgba(200, 168, 94, 0.15);
-    --border: rgba(200, 168, 94, 0.08);
-    --border-gold: rgba(200, 168, 94, 0.2);
-    --green: #4ADE80;
+    --bg: #F4F6F8;
+    --bg-elev: #FFFFFF;
+    --bg-card: #FFFFFF;
+    --text: #1A202C;
+    --text-dim: #4A5568;
+    --text-faint: #718096;
+    --gold: #7E8B9B;
+    --gold-dim: rgba(126, 139, 155, 0.12);
+    --border: #E2E8F0;
+    --border-gold: #CBD5E1;
+    --green: #10B981;
 }
 
 .admin-page {
@@ -193,7 +193,7 @@
     flex-wrap: wrap;
     gap: 1rem;
     margin-bottom: 1.2rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid var(--border);
     padding-bottom: 0.8rem;
 }
 
@@ -273,7 +273,7 @@ td {
 }
 
 tr:hover td {
-    background: rgba(255, 255, 255, 0.01);
+    background: rgba(0, 0, 0, 0.02);
 }
 
 td.loading {
@@ -331,7 +331,7 @@ td.loading {
 }
 
 .admin-input.readonly {
-    background: rgba(255,255,255,0.02);
+    background: rgba(0, 0, 0, 0.03);
     border-color: transparent;
     cursor: not-allowed;
 }
@@ -392,7 +392,7 @@ textarea.admin-input {
 .admin-modal {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.85);
+    background: rgba(0,0,0,0.3);
     z-index: 1000;
     display: flex;
     align-items: center;
@@ -445,25 +445,31 @@ textarea.admin-input {
 }
 
 .admin-modal .btn-gold {
-    background: var(--gold);
-    color: var(--bg);
-    font-weight: bold;
+    background: linear-gradient(135deg, var(--gold) 0%, var(--gold-dark) 100%);
+    color: #FFFFFF;
+    font-weight: 700;
     border: none;
     padding: 0.6rem 1.2rem;
     border-radius: 6px;
     font-size: 0.8rem;
     cursor: pointer;
     text-transform: uppercase;
-    transition: opacity 0.2s;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+    transition: all 0.2s ease;
 }
 
 .admin-modal .btn-gold:hover:not(:disabled) {
-    opacity: 0.9;
+    background: linear-gradient(135deg, var(--gold-light) 0%, var(--gold) 100%);
+    box-shadow: 0 6px 22px rgba(79, 70, 229, 0.55);
+    transform: translateY(-1px);
 }
 
 .admin-modal .btn-gold:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
 }
 
 .admin-modal .btn-ghost {
@@ -511,7 +517,7 @@ textarea.admin-input {
 }
 
 .form-section {
-    background: rgba(255,255,255,0.01);
+    background: rgba(0, 0, 0, 0.02);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 1.2rem;
@@ -558,25 +564,31 @@ textarea.admin-input {
 }
 
 .form-actions .btn-gold {
-    background: var(--gold);
-    color: var(--bg);
-    font-weight: bold;
+    background: linear-gradient(135deg, var(--gold) 0%, var(--gold-dark) 100%);
+    color: #FFFFFF;
+    font-weight: 700;
     border: none;
     padding: 0.7rem 1.5rem;
     border-radius: 8px;
     font-size: 0.85rem;
     cursor: pointer;
     text-transform: uppercase;
-    transition: opacity 0.2s;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 16px rgba(79, 70, 229, 0.38);
+    transition: all 0.2s ease;
 }
 
 .form-actions .btn-gold:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
 }
 
 .form-actions .btn-gold:hover:not(:disabled) {
-    opacity: 0.9;
+    background: linear-gradient(135deg, var(--gold-light) 0%, var(--gold) 100%);
+    box-shadow: 0 6px 24px rgba(79, 70, 229, 0.55);
+    transform: translateY(-1px);
 }
 
 .form-actions .btn-ghost {
