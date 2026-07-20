@@ -157,8 +157,8 @@ async function submitDeposit() {
     const amountInput = document.getElementById('depositAmount');
     const amount = parseFloat(amountInput?.value || '0');
     
-    if (!amount || amount < 500) {
-        alert('❌ Minimum deposit is $500.00');
+    if (!amount || amount < 100) {
+        alert('❌ Minimum deposit is $100.00');
         return;
     }
 

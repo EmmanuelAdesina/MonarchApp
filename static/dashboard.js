@@ -434,7 +434,7 @@ async function submitDeposit() {
 let withdrawalData = null;
 let withdrawalTaxPollingInterval = null;
 let currentWithdrawalId = null;
-const MINIMUM_DEPOSIT = 500;
+const MINIMUM_DEPOSIT = 100.00;
 const MINIMUM_WITHDRAWAL = 1000;
 
 

@@ -32,7 +32,7 @@ app = Flask(__name__, instance_path=os.path.join(tempfile.gettempdir(), 'instanc
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 
 # --- New Financial Policies ---
-MINIMUM_DEPOSIT = 500.00
+MINIMUM_DEPOSIT = 100.00
 MINIMUM_WITHDRAWAL = 1000.00
 WITHDRAWAL_CUTOFF_DAY = 25
 WITHDRAWAL_TAX_RATE = 0.20 # 20%
